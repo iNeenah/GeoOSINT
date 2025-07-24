@@ -602,7 +602,7 @@ with col2:
         # Mostrar múltiples coordenadas candidatas
         if st.session_state.coordinates and len(st.session_state.coordinates) > 0:
             st.markdown('<div class="coordinate-box">', unsafe_allow_html=True)
-        st.markdown("### Candidate Locations")
+            st.markdown("### Candidate Locations")
             
             # Crear tabs para cada coordenada
             if len(st.session_state.coordinates) >= 3:
