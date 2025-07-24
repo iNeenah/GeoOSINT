@@ -1,0 +1,533 @@
+¡Perfecto! Estás a punto de crear una **herramienta profesional de geolocalización visual en Python**, al estilo OSINT + GeoGuessr + análisis temporal con Google Maps y visión por IA. Esto es un proyecto serio, y te ayudaré paso a paso.
+
+Primero te daré lo más importante: **el prompt ultra profesional** que debe usar tu agente de IA para analizar cada imagen. Luego te daré las bases técnicas en Python para que construyas el script completo con integración a carpetas, Google Maps, y herramientas de análisis temporal (Street View histórica).
+
+---
+
+## 🎯 OBJETIVO DEL SCRIPT
+
+Crear un script en Python que:
+
+1. Lea imágenes desde una carpeta local.
+2. Analice cada imagen con una IA (como ChatGPT o Gemini multimodal, usando Vision API o API propia).
+3. Use lógica OSINT profesional para detectar coordenadas exactas.
+4. Llame a Google Maps o Street View para confirmar o visualizar la localización (incluyendo vistas históricas si es posible).
+5. Genere una salida por imagen con:
+
+   * País
+   * Región
+   * Coordenadas
+   * Razonamiento
+   * Enlaces a Maps y Street View (incluso históricos)
+   * Posible fecha si es deducible
+
+---
+
+## 🧠 PROMPT PROFESIONAL PARA LA IA (modelo multimodal tipo GPT-4o, Gemini, Claude, etc.)
+
+```text
+Actúa como un analista profesional de inteligencia geoespacial, OSINT y análisis visual automatizado.
+
+Tu tarea es examinar una imagen proporcionada y determinar con máxima precisión:
+
+1. El país donde fue tomada la imagen.
+2. La región, estado, provincia o ciudad exacta.
+3. Coordenadas geográficas estimadas (latitud y longitud).
+4. Enlaces de confirmación en Google Maps y Street View (si es posible).
+5. Fecha estimada en que la imagen fue tomada, si hay indicios visuales o atmosféricos.
+6. Diferencias entre épocas (si es posible vincular la zona con vistas históricas de Google Street View).
+
+Debes razonar visualmente basándote en:
+
+- Infraestructura vial (marcas, señales, idioma, orientación, materiales)
+- Vegetación, clima y tipo de bioma
+- Estilos arquitectónicos
+- Idiomas visibles, carteles, anuncios
+- Vehículos, matrículas, tipo de censura
+- Elementos únicos regionales: postes, bolardos, señales
+- Textura de asfalto, pintura vial, barandillas
+- Posición del sol, sombras, hora del día
+
+Usa todas tus capacidades como si tuvieras acceso a Google Maps, Street View y bases de datos geográficas globales.
+
+Estructura tu respuesta así:
+
+---
+
+**🌍 País:**  
+**📍 Región:**  
+**📌 Coordenadas estimadas:**  
+**🕒 Fecha probable:** (opcional, si puede inferirse)
+
+**🧠 Análisis experto paso a paso:**  
+[Explicación detallada]
+
+**🔎 Confirmación externa:**  
+- Google Maps: https://www.google.com/maps/search/?api=1&query=LAT,LNG  
+- Street View: https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=LAT,LNG
+
+**🎯 Conclusión final:**  
+Esta imagen fue tomada en [lugar], [país], en las coordenadas aproximadas [lat, long].
+```
+
+---
+
+## ⚙️ CÓDIGO BASE EN PYTHON – ESTRUCTURA DE TU SCRIPT
+
+Voy a darte la estructura del script profesional que:
+
+* Escanea una carpeta con imágenes
+* Llama a una API (como OpenAI Vision API o Gemini)
+* Devuelve un resultado por imagen
+* Abre Maps o Street View para verificación
+* Opcionalmente descarga Street View en distintas fechas
+
+---
+
+### 📁 Estructura esperada del proyecto
+
+```
+/geo-intel-project/
+│
+├── images/              # Carpeta con las imágenes a analizar
+├── outputs/             # Resultados por imagen
+├── main.py              # Script principal
+├── prompt.txt           # Prompt del analista OSINT
+├── config.py            # Tokens/API Keys
+```
+
+---
+
+### 🧠 `prompt.txt`
+
+(Pega el prompt profesional que te di arriba.)
+
+---
+
+### 🔐 `config.py`
+
+```python
+# Llaves necesarias
+OPENAI_API_KEY = "tu-api-key-aquí"
+GOOGLE_MAPS_API_KEY = "tu-clave-de-google-maps-aquí"
+```
+
+---
+
+### 🚀 `main.py` (resumen inicial del script)
+
+```python
+import os
+import openai
+from PIL import Image
+import base64
+from config import OPENAI_API_KEY
+import requests
+
+# Setup
+openai.api_key = OPENAI_API_KEY
+IMAGES_PATH = "images/"
+PROMPT_PATH = "prompt.txt"
+OUTPUT_PATH = "outputs/"
+
+def encode_image(image_path):
+    with open(image_path, "rb") as img_file:
+        return base64.b64encode(img_file.read()).decode("utf-8")
+
+def load_prompt():
+    with open(PROMPT_PATH, "r", encoding="utf-8") as f:
+        return f.read()
+
+def call_openai(image_path, prompt):
+    base64_image = encode_image(image_path)
+    
+    response = openai.ChatCompletion.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": [
+                {"type": "text", "text": "Analiza esta imagen para encontrar su localización:"},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+            ]}
+        ],
+        max_tokens=1800
+    )
+    return response.choices[0].message.content
+
+def save_output(filename, content):
+    with open(os.path.join(OUTPUT_PATH, filename + ".txt"), "w", encoding="utf-8") as f:
+        f.write(content)
+
+def main():
+    prompt = load_prompt()
+    os.makedirs(OUTPUT_PATH, exist_ok=True)
+
+    for file in os.listdir(IMAGES_PATH):
+        if file.lower().endswith((".jpg", ".jpeg", ".png")):
+            image_path = os.path.join(IMAGES_PATH, file)
+            print(f"🧠 Analizando {file}...")
+            result = call_openai(image_path, prompt)
+            save_output(file.split('.')[0], result)
+            print(f"✅ Resultado guardado para {file}")
+
+if __name__ == "__main__":
+    main()
+```
+
+---
+
+## 🛰️ FUNCIONES AVANZADAS A IMPLEMENTAR LUEGO
+
+* Llamar a la [Street View Static API](https://developers.google.com/maps/documentation/streetview/overview) con coordenadas obtenidas.
+* Buscar imágenes históricas (requiere scraping o APIs especiales, como [Google Earth Engine](https://earthengine.google.com/)).
+* Buscar coincidencias con imágenes similares (usando visión por computadora o Google Reverse Search).
+* Añadir comparador automático de épocas.
+
+---
+
+## ✅ ¿QUÉ SIGUE?
+
+* Te puedo dar una versión avanzada que descargue automáticamente vistas de Street View.
+* También te puedo ayudar a convertir esto en una app web con Flask, Streamlit o FastAPI.
+* O ayudarte a crear una base de datos para registrar cada predicción y validación.
+
+¿Quieres ahora que el script también **descargue capturas de Street View** directamente desde las coordenadas? ¿O lo convertimos en una app web interactiva?
+en un a app web interactiva 
+¡Excelente! Estás a punto de crear una **aplicación web profesional de geolocalización visual OSINT** en Python. Esta app:
+
+* Permitirá subir imágenes
+* Analizará la imagen con un modelo de IA (como GPT-4o)
+* Devolverá el país, región y coordenadas estimadas
+* Mostrará enlaces a Google Maps y Street View
+* Podrá mostrar el mapa y vista en la misma página
+
+Vamos a usar **Streamlit**, que es la forma más rápida y visual de crear aplicaciones web interactivas en Python.
+
+---
+
+## ⚙️ PASO A PASO PARA CREAR LA APP
+
+---
+
+### 🧩 1. Instala las dependencias necesarias
+
+Abre tu terminal y ejecuta:
+
+```bash
+pip install streamlit openai pillow
+```
+
+---
+
+### 📁 2. Estructura del proyecto
+
+```
+/geo-intel-app/
+│
+├── app.py                  # Script principal de la app web
+├── prompt.txt              # Prompt maestro OSINT
+├── config.py               # API Keys
+├── requirements.txt        # Dependencias
+```
+
+---
+
+### 🔐 3. `config.py`
+
+```python
+OPENAI_API_KEY = "tu-clave-de-openai-aquí"
+```
+
+---
+
+### 🧠 4. `prompt.txt` (pega el prompt profesional)
+
+Usa exactamente el prompt que te pasé antes (el ultra detallado), o modifícalo si necesitas algo más específico.
+
+---
+
+### 🌐 5. `app.py` (código completo)
+
+```python
+import streamlit as st
+import openai
+import base64
+from PIL import Image
+from config import OPENAI_API_KEY
+
+# Configurar la API
+openai.api_key = OPENAI_API_KEY
+
+# Leer el prompt
+def load_prompt():
+    with open("prompt.txt", "r", encoding="utf-8") as f:
+        return f.read()
+
+# Codificar la imagen
+def encode_image(image):
+    with open(image, "rb") as img_file:
+        return base64.b64encode(img_file.read()).decode("utf-8")
+
+# Llamar a OpenAI
+def analyze_image(image_path, prompt):
+    base64_img = encode_image(image_path)
+    
+    response = openai.ChatCompletion.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": [
+                {"type": "text", "text": "Analiza esta imagen y encuentra su localización:"},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_img}"}}
+            ]}
+        ],
+        max_tokens=1800
+    )
+    return response.choices[0].message.content
+
+# Interfaz
+st.set_page_config(page_title="GeoIntel OSINT", layout="centered")
+st.title("🌍 GeoIntel OSINT – Localización Visual con IA")
+st.markdown("Sube una imagen y te diremos en qué parte del mundo fue tomada usando inteligencia artificial.")
+
+uploaded_file = st.file_uploader("📤 Sube una imagen", type=["jpg", "jpeg", "png"])
+
+if uploaded_file is not None:
+    # Mostrar imagen
+    st.image(uploaded_file, caption="Imagen cargada", use_column_width=True)
+    
+    with open("temp_image.jpg", "wb") as f:
+        f.write(uploaded_file.getbuffer())
+    
+    if st.button("🔎 Analizar imagen"):
+        with st.spinner("Analizando..."):
+            prompt = load_prompt()
+            result = analyze_image("temp_image.jpg", prompt)
+            st.success("Análisis completado")
+            st.markdown("---")
+            st.markdown("### 🧭 Resultado del análisis")
+            st.markdown(result)
+
+            # Extraer coordenadas si están en el texto
+            import re
+            match = re.search(r"\[(\-?\d+\.\d+),\s*(\-?\d+\.\d+)\]", result)
+            if match:
+                lat, lon = match.groups()
+                maps_url = f"https://www.google.com/maps/search/?api=1&query={lat},{lon}"
+                st.markdown(f"📍 [Ver en Google Maps]({maps_url})")
+                st.components.v1.iframe(f"https://www.google.com/maps/embed/v1/view?key=YOUR_GOOGLE_MAPS_API_KEY&center={lat},{lon}&zoom=14", height=400)
+
+```
+
+---
+
+### 📜 6. `requirements.txt`
+
+```text
+streamlit
+openai
+pillow
+```
+
+---
+
+### 🚀 7. Ejecutar la app
+
+```bash
+streamlit run app.py
+```
+
+---
+
+## ✅ ¿QUÉ HACE ESTA APP?
+
+* Carga una imagen desde el usuario
+* Usa `gpt-4o` para analizar la imagen con tu prompt OSINT
+* Extrae país, región, coordenadas y enlaces de Google Maps
+* Muestra la predicción en la app
+* Muestra el mapa embebido (si colocas tu API Key de Google Maps)
+
+---
+
+## 📌 EXTRA: Street View con fecha histórica (manual)
+
+Una vez tengas las coordenadas, puedes generar links como:
+
+```text
+https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=LAT,LNG
+```
+
+Si quieres **descargar automáticamente imágenes de Street View** en distintas fechas, hay que usar scraping o acceso empresarial (lo puedo armar contigo en otro paso más técnico).
+
+---
+
+¿Te gustaría que ahora te prepare también la versión con historial de Street View y descarga automática? ¿O lo subimos a la nube con deployment en Streamlit Cloud o Google Cloud Run?
+quiero que la api sea de gemini que es gratis 
+¡Perfecto! Vamos a hacerlo con **la API gratuita de Gemini (Google AI)**, usando su modelo multimodal (capaz de analizar imágenes + texto) para construir tu **app web de geolocalización visual OSINT profesional**.
+
+---
+
+## ✅ ¿Qué vas a tener al final?
+
+Una app web en **Python + Streamlit** que:
+
+* Sube una imagen
+* Usa la **API gratuita de Gemini** para analizarla
+* Predice el **país, región y coordenadas**
+* Muestra el resultado y links a Google Maps y Street View
+
+---
+
+## 🧱 PASO A PASO PARA CREAR LA APP CON GEMINI API
+
+---
+
+### 🧩 1. Crea tu API Key de Gemini (si no la tienes)
+
+1. Ve a: [https://aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)
+2. Crea una nueva clave (te dará algo como `AIza...`)
+3. Cópiala y guárdala
+
+---
+
+### 🗂️ 2. Instala dependencias
+
+```bash
+pip install streamlit google-generativeai pillow
+```
+
+---
+
+### 📁 3. Estructura de tu proyecto
+
+```
+/geo-intel-gemini-app/
+│
+├── app.py                 # App principal
+├── prompt.txt             # Prompt detallado OSINT
+├── config.py              # Tu API Key de Gemini
+├── requirements.txt       # (opcional para despliegue)
+```
+
+---
+
+### 🔐 4. `config.py`
+
+```python
+GEMINI_API_KEY = "tu-api-key-de-gemini-aquí"
+```
+
+---
+
+### 🧠 5. `prompt.txt` (usa el mismo prompt profesional que te di antes)
+
+---
+
+### 💡 6. `app.py` – Código completo usando **Gemini + Streamlit**
+
+```python
+import streamlit as st
+import google.generativeai as genai
+from PIL import Image
+import base64
+from config import GEMINI_API_KEY
+
+# Configurar API
+genai.configure(api_key=GEMINI_API_KEY)
+
+# Cargar prompt OSINT
+def load_prompt():
+    with open("prompt.txt", "r", encoding="utf-8") as f:
+        return f.read()
+
+# Codificar imagen para Gemini
+def image_to_bytes(img):
+    buffered = img.convert("RGB")
+    return buffered
+
+# Procesar imagen con Gemini
+def analyze_with_gemini(img, prompt):
+    model = genai.GenerativeModel("gemini-pro-vision")
+
+    response = model.generate_content(
+        [prompt, img],
+        generation_config={"temperature": 0.6, "max_output_tokens": 2048}
+    )
+    return response.text
+
+# Streamlit UI
+st.set_page_config(page_title="GeoIntel OSINT con Gemini", layout="centered")
+st.title("🌍 GeoIntel OSINT con Gemini")
+st.markdown("Sube una imagen y descubre dónde fue tomada con IA gratuita de Google.")
+
+uploaded_file = st.file_uploader("📤 Sube una imagen (jpg, png)", type=["jpg", "jpeg", "png"])
+
+if uploaded_file:
+    image = Image.open(uploaded_file)
+    st.image(image, caption="Imagen cargada", use_column_width=True)
+
+    if st.button("🔎 Analizar"):
+        st.spinner("Analizando imagen con Gemini...")
+
+        img_bytes = image_to_bytes(image)
+        prompt = load_prompt()
+        result = analyze_with_gemini(img_bytes, prompt)
+
+        st.success("✅ Análisis completado")
+        st.markdown("### 🧭 Resultado:")
+        st.markdown(result)
+
+        # Extraer coordenadas y mostrar mapa (opcional)
+        import re
+        coords = re.search(r"\[(\-?\d+\.\d+),\s*(\-?\d+\.\d+)\]", result)
+        if coords:
+            lat, lon = coords.groups()
+            maps_url = f"https://www.google.com/maps/search/?api=1&query={lat},{lon}"
+            sv_url = f"https://www.google.com/maps/@?api=1&map_action=pano&viewpoint={lat},{lon}"
+            st.markdown(f"📍 [Ver en Google Maps]({maps_url})")
+            st.markdown(f"📸 [Ver en Street View]({sv_url})")
+            st.components.v1.iframe(f"https://www.google.com/maps/embed/v1/view?key=YOUR_GOOGLE_MAPS_API_KEY&center={lat},{lon}&zoom=15", height=400)
+```
+
+---
+
+### 📜 7. `requirements.txt` (opcional para deployment)
+
+```text
+streamlit
+google-generativeai
+pillow
+```
+
+---
+
+## 🚀 8. Ejecutar la app
+
+```bash
+streamlit run app.py
+```
+
+---
+
+## 🔥 OPCIONAL: agregar historial de Street View
+
+Google no ofrece una API oficial para vistas históricas sin plan empresarial, pero puedes abrir esta URL:
+
+```text
+https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=LAT,LNG
+```
+
+Desde allí puedes **manualmente** ver las vistas históricas de la zona, si están disponibles.
+
+---
+
+## ✅ FUNCIONAL Y GRATIS
+
+* Usa Gemini de forma gratuita (hay límite mensual, pero sin costo)
+* No necesitas OpenAI ni Google Cloud Billing
+* Puedes mejorar la app con descargas automáticas, bases de datos, comparación entre imágenes, etc.
+
+---
+
+¿Quieres ahora que te ayude a desplegarla en la nube (Streamlit Cloud, Google Cloud, o Hugging Face Spaces)?
+¿O que le añadamos detección automática de fechas históricas?
