@@ -153,7 +153,7 @@ class TimeAnalysis:
         return detected_clues
 
 class AdvancedSearchTools:
-    """Advanced search and verification tools"""
+    """Advanced search and verification tools inspired by GeoMastr"""
     
     @staticmethod
     def generate_search_queries(analysis_result):
@@ -166,18 +166,59 @@ class AdvancedSearchTools:
             if country_match:
                 country = country_match.group(1).strip()
                 queries.append(f'"{country}" street view')
+                queries.append(f'"{country}" landmarks')
         
         if 'city' in analysis_result.lower():
             city_match = re.search(r'city[:\s]+([^,\n]+)', analysis_result.lower())
             if city_match:
                 city = city_match.group(1).strip()
                 queries.append(f'"{city}" landmarks')
+                queries.append(f'"{city}" street photography')
         
         # Add architectural queries
         if 'building' in analysis_result.lower() or 'architecture' in analysis_result.lower():
             queries.append('distinctive architecture landmarks')
         
+        # Add vegetation queries
+        if any(word in analysis_result.lower() for word in ['tree', 'plant', 'vegetation', 'forest']):
+            queries.append('vegetation identification location')
+        
+        # Add infrastructure queries
+        if any(word in analysis_result.lower() for word in ['road', 'street', 'sign', 'pole']):
+            queries.append('infrastructure street signs')
+        
         return queries
+    
+    @staticmethod
+    def generate_osint_tools_links():
+        """Generate links to popular OSINT tools"""
+        return {
+            'Image Analysis': {
+                'Jeffrey\'s Image Metadata Viewer': 'http://exif.regex.info/exif.cgi',
+                'FotoForensics': 'http://fotoforensics.com/',
+                'Ghiro': 'http://www.getghiro.org/',
+                'InVID Verification Plugin': 'https://www.invid-project.eu/tools-and-services/invid-verification-plugin/'
+            },
+            'Geolocation': {
+                'GeoGuessr': 'https://www.geoguessr.com/',
+                'Wikimapia': 'http://wikimapia.org/',
+                'OverpassTurbo': 'https://overpass-turbo.eu/',
+                'Dual Maps': 'http://data.mashedworld.com/dualmaps/map.htm'
+            },
+            'Reverse Image Search': {
+                'Google Images': 'https://images.google.com/',
+                'TinEye': 'https://tineye.com/',
+                'Yandex Images': 'https://yandex.com/images/',
+                'Bing Visual Search': 'https://www.bing.com/visualsearch',
+                'RevEye': 'https://reveye.it/'
+            },
+            'Social Media': {
+                'Social Searcher': 'https://www.social-searcher.com/',
+                'Pipl': 'https://pipl.com/',
+                'Sherlock': 'https://github.com/sherlock-project/sherlock',
+                'WhatsMyName': 'https://whatsmyname.app/'
+            }
+        }
     
     @staticmethod
     def generate_verification_links(lat, lon, analysis_text):
@@ -246,5 +287,131 @@ class CoordinateRefinement:
         }
         
         return radius_map.get(confidence_level.lower(), 500)
+
+class SunPositionAnalysis:
+    """Sun position analysis for hemisphere and time determination"""
+    
+    @staticmethod
+    def analyze_shadows(description):
+        """Analyze shadow patterns for geographic clues"""
+        shadow_clues = {
+            'hemisphere': {
+                'northern': ['shadows point north', 'sun in south', 'southern exposure'],
+                'southern': ['shadows point south', 'sun in north', 'northern exposure']
+            },
+            'time': {
+                'morning': ['long shadows east', 'sun low east', 'morning shadows'],
+                'noon': ['short shadows', 'overhead sun', 'minimal shadows'],
+                'afternoon': ['long shadows west', 'sun low west', 'afternoon shadows']
+            }
+        }
+        
+        detected_clues = {'hemisphere': [], 'time': []}
+        description_lower = description.lower()
+        
+        for category, subcategories in shadow_clues.items():
+            for indicator_type, indicators in subcategories.items():
+                for indicator in indicators:
+                    if indicator in description_lower:
+                        detected_clues[category].append(indicator_type)
+                        break
+        
+        return detected_clues
+
+class VehicleAnalysis:
+    """Vehicle analysis for regional identification"""
+    
+    @staticmethod
+    def identify_regional_vehicles(description):
+        """Identify vehicles that are region-specific"""
+        regional_vehicles = {
+            'Europe': ['volkswagen', 'bmw', 'mercedes', 'audi', 'peugeot', 'renault', 'fiat'],
+            'Asia': ['toyota', 'honda', 'nissan', 'hyundai', 'kia', 'suzuki', 'mitsubishi'],
+            'America': ['ford', 'chevrolet', 'dodge', 'jeep', 'cadillac', 'buick'],
+            'India': ['tata', 'mahindra', 'maruti', 'bajaj', 'hero', 'tvs'],
+            'Russia': ['lada', 'uaz', 'gaz', 'kamaz'],
+            'China': ['byd', 'geely', 'chery', 'great wall']
+        }
+        
+        detected_regions = []
+        description_lower = description.lower()
+        
+        for region, vehicles in regional_vehicles.items():
+            for vehicle in vehicles:
+                if vehicle in description_lower:
+                    detected_regions.append(region)
+                    break
+        
+        return detected_regions
+
+class SignageAnalysis:
+    """Traffic signs and signage analysis"""
+    
+    @staticmethod
+    def analyze_traffic_signs(description):
+        """Analyze traffic signs for country identification"""
+        sign_patterns = {
+            'Europe': ['circular signs', 'blue signs', 'eu standard', 'metric units'],
+            'USA': ['rectangular signs', 'yellow warning', 'stop sign octagon', 'mph'],
+            'UK': ['left side driving', 'circular signs', 'mph', 'british signs'],
+            'Australia': ['left side driving', 'kangaroo signs', 'metric', 'australian'],
+            'Japan': ['japanese characters', 'left side driving', 'blue signs'],
+            'China': ['chinese characters', 'right side driving', 'red signs']
+        }
+        
+        detected_countries = []
+        description_lower = description.lower()
+        
+        for country, patterns in sign_patterns.items():
+            for pattern in patterns:
+                if pattern in description_lower:
+                    detected_countries.append(country)
+                    break
+        
+        return detected_countries
+
+class LanguageAnalysis:
+    """Language and text analysis for location identification"""
+    
+    @staticmethod
+    def detect_languages_and_scripts(description):
+        """Detect languages and writing systems"""
+        language_indicators = {
+            'Latin Script': {
+                'English': ['english', 'stop', 'street', 'avenue', 'road'],
+                'Spanish': ['calle', 'avenida', 'plaza', 'centro', 'iglesia'],
+                'French': ['rue', 'avenue', 'place', 'centre', 'église'],
+                'German': ['straße', 'platz', 'kirche', 'zentrum', 'bahnhof'],
+                'Italian': ['via', 'piazza', 'centro', 'chiesa', 'stazione'],
+                'Portuguese': ['rua', 'avenida', 'praça', 'centro', 'igreja']
+            },
+            'Cyrillic Script': {
+                'Russian': ['улица', 'проспект', 'площадь', 'центр', 'церковь'],
+                'Ukrainian': ['вулиця', 'проспект', 'площа', 'центр', 'церква'],
+                'Bulgarian': ['улица', 'площад', 'център', 'църква']
+            },
+            'Asian Scripts': {
+                'Chinese': ['街', '路', '大道', '中心', '市'],
+                'Japanese': ['通り', '街', '駅', '中心', '市'],
+                'Korean': ['길', '로', '거리', '중심', '시'],
+                'Thai': ['ถนน', 'ซอย', 'ตลาด', 'วัด', 'โรงเรียน']
+            },
+            'Arabic Script': {
+                'Arabic': ['شارع', 'طريق', 'ميدان', 'مركز', 'مسجد'],
+                'Persian': ['خیابان', 'میدان', 'مرکز', 'مسجد']
+            }
+        }
+        
+        detected_languages = []
+        description_lower = description.lower()
+        
+        for script_family, languages in language_indicators.items():
+            for language, words in languages.items():
+                for word in words:
+                    if word in description_lower:
+                        detected_languages.append(f"{language} ({script_family})")
+                        break
+        
+        return detected_languages
 
 import re
