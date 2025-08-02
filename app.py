@@ -5,7 +5,18 @@ import re
 import os
 import io
 import base64
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+from datetime import datetime
 from config import GEMINI_API_KEY
+from geosint_utils import (
+    MetadataExtractor, 
+    ReverseGeocoder, 
+    CoordinateValidator, 
+    DataExporter, 
+    SearchEngineIntegration
+)
 
 # Configurar API de Gemini
 genai.configure(api_key=GEMINI_API_KEY)
@@ -17,6 +28,19 @@ if 'analysis_result' not in st.session_state:
     st.session_state.analysis_result = None
 if 'coordinates' not in st.session_state:
     st.session_state.coordinates = None
+if 'metadata' not in st.session_state:
+    st.session_state.metadata = None
+if 'validated_coords' not in st.session_state:
+    st.session_state.validated_coords = None
+if 'location_details' not in st.session_state:
+    st.session_state.location_details = None
+
+# Inicializar utilidades
+metadata_extractor = MetadataExtractor()
+reverse_geocoder = ReverseGeocoder()
+coord_validator = CoordinateValidator()
+data_exporter = DataExporter()
+search_integration = SearchEngineIntegration()
 
 # Cargar prompt OSINT
 def load_prompt():
@@ -514,7 +538,31 @@ with col1:
         if uploaded_file:
             image = Image.open(uploaded_file)
             st.session_state.current_image = image
+            
+            # Extract metadata and EXIF data
+            with st.spinner("Extracting metadata..."):
+                # Try to extract GPS from EXIF
+                gps_coords = metadata_extractor.extract_gps_from_exif(image)
+                
+                # Extract other EXIF data
+                uploaded_file.seek(0)  # Reset file pointer
+                exif_data = metadata_extractor.extract_exif_data(uploaded_file)
+                
+                st.session_state.metadata = {
+                    'gps_coordinates': gps_coords,
+                    'exif_data': exif_data,
+                    'file_info': {
+                        'filename': uploaded_file.name,
+                        'size': uploaded_file.size,
+                        'type': uploaded_file.type
+                    }
+                }
+            
             st.success("Image loaded successfully")
+            
+            # Show GPS coordinates if found in EXIF
+            if gps_coords:
+                st.info(f"📍 GPS coordinates found in EXIF: {gps_coords['latitude']:.6f}, {gps_coords['longitude']:.6f}")
     
     with tab2:
         st.markdown("### Paste Image Directly")
@@ -531,7 +579,24 @@ with col1:
             
             if paste_result.image_data is not None:
                 st.session_state.current_image = paste_result.image_data
+                
+                # Extract metadata from pasted image
+                with st.spinner("Extracting metadata..."):
+                    gps_coords = metadata_extractor.extract_gps_from_exif(paste_result.image_data)
+                    st.session_state.metadata = {
+                        'gps_coordinates': gps_coords,
+                        'exif_data': {},
+                        'file_info': {
+                            'filename': 'pasted_image',
+                            'size': 'Unknown',
+                            'type': 'image/png'
+                        }
+                    }
+                
                 st.success("Image pasted successfully")
+                
+                if gps_coords:
+                    st.info(f"📍 GPS coordinates found: {gps_coords['latitude']:.6f}, {gps_coords['longitude']:.6f}")
                 
         except ImportError:
             st.warning("For direct paste functionality:")
@@ -590,14 +655,213 @@ with col2:
                     coordinates_list = extract_multiple_coordinates(result)
                     st.session_state.coordinates = coordinates_list
                     
+                    # Validate coordinates and get location details
+                    if coordinates_list:
+                        with st.spinner("Validating coordinates and getting location details..."):
+                            st.session_state.validated_coords = coord_validator.validate_coordinates(coordinates_list)
+                            
+                            # Get detailed location information for each coordinate
+                            location_details = []
+                            for lat, lon in coordinates_list:
+                                details = reverse_geocoder.get_location_details(lat, lon)
+                                if details:
+                                    details['coordinates'] = f"{lat}, {lon}"
+                                    location_details.append(details)
+                            st.session_state.location_details = location_details
+                    
                     st.success("Analysis completed")
     
     # Mostrar resultados si existen
     if st.session_state.analysis_result:
-        st.markdown('<div class="result-box">', unsafe_allow_html=True)
-        st.markdown("### Analysis Results")
-        st.markdown(st.session_state.analysis_result)
-        st.markdown('</div>', unsafe_allow_html=True)
+        # Crear tabs para diferentes tipos de información
+        result_tab1, result_tab2, result_tab3, result_tab4 = st.tabs([
+            "AI Analysis", "Metadata", "Location Details", "Export"
+        ])
+        
+        with result_tab1:
+            st.markdown('<div class="result-box">', unsafe_allow_html=True)
+            st.markdown("### AI Analysis Results")
+            st.markdown(st.session_state.analysis_result)
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        with result_tab2:
+            st.markdown("### Image Metadata")
+            if st.session_state.metadata:
+                metadata = st.session_state.metadata
+                
+                # File information
+                st.markdown("#### File Information")
+                file_info = metadata.get('file_info', {})
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Filename", file_info.get('filename', 'Unknown'))
+                with col2:
+                    st.metric("Size", f"{file_info.get('size', 0)} bytes" if isinstance(file_info.get('size'), int) else file_info.get('size', 'Unknown'))
+                with col3:
+                    st.metric("Type", file_info.get('type', 'Unknown'))
+                
+                # GPS coordinates from EXIF
+                gps_coords = metadata.get('gps_coordinates')
+                if gps_coords:
+                    st.markdown("#### GPS Coordinates (EXIF)")
+                    st.success(f"📍 Found: {gps_coords['latitude']:.6f}, {gps_coords['longitude']:.6f}")
+                    
+                    # Add to map
+                    try:
+                        import folium
+                        from streamlit_folium import st_folium
+                        
+                        m = folium.Map(
+                            location=[gps_coords['latitude'], gps_coords['longitude']], 
+                            zoom_start=15
+                        )
+                        
+                        folium.Marker(
+                            [gps_coords['latitude'], gps_coords['longitude']],
+                            popup="GPS coordinates from EXIF data",
+                            tooltip="EXIF GPS Location",
+                            icon=folium.Icon(color='green', icon='camera')
+                        ).add_to(m)
+                        
+                        st_folium(m, width=700, height=300)
+                    except ImportError:
+                        st.info("Install folium for map visualization")
+                else:
+                    st.info("No GPS coordinates found in EXIF data")
+                
+                # Other EXIF data
+                exif_data = metadata.get('exif_data', {})
+                if exif_data:
+                    st.markdown("#### EXIF Data")
+                    with st.expander("View all EXIF data"):
+                        for key, value in exif_data.items():
+                            st.text(f"{key}: {value}")
+            else:
+                st.info("No metadata available")
+        
+        with result_tab3:
+            st.markdown("### Location Details")
+            if st.session_state.location_details:
+                for i, details in enumerate(st.session_state.location_details):
+                    with st.expander(f"Location {i+1} Details"):
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.metric("Country", details.get('country', 'Unknown'))
+                            st.metric("State/Region", details.get('state', 'Unknown'))
+                            st.metric("City", details.get('city', 'Unknown'))
+                        with col2:
+                            st.metric("Country Code", details.get('country_code', 'Unknown'))
+                            st.metric("Postal Code", details.get('postcode', 'Unknown'))
+                            st.metric("Road", details.get('road', 'Unknown'))
+                        
+                        st.text_area("Full Address", details.get('full_address', 'Unknown'), height=100)
+            
+            # Coordinate validation results
+            if st.session_state.validated_coords:
+                st.markdown("#### Coordinate Validation")
+                validation_data = []
+                for coord in st.session_state.validated_coords:
+                    validation_data.append({
+                        'Location': f"Location {coord['index']}",
+                        'Latitude': coord['latitude'],
+                        'Longitude': coord['longitude'],
+                        'Confidence': coord['confidence'],
+                        'Valid': '✅' if coord['valid'] else '❌'
+                    })
+                
+                df = pd.DataFrame(validation_data)
+                st.dataframe(df, use_container_width=True)
+                
+                # Distance calculations
+                if st.session_state.coordinates and len(st.session_state.coordinates) > 1:
+                    distances = coord_validator.calculate_distances(st.session_state.coordinates)
+                    if distances:
+                        st.markdown("#### Distances Between Locations")
+                        distance_df = pd.DataFrame(distances)
+                        st.dataframe(distance_df, use_container_width=True)
+        
+        with result_tab4:
+            st.markdown("### Export Results")
+            
+            if st.session_state.coordinates:
+                # Prepare export data
+                export_data = []
+                for i, (lat, lon) in enumerate(st.session_state.coordinates):
+                    data_point = {
+                        'location_id': i + 1,
+                        'latitude': lat,
+                        'longitude': lon,
+                        'timestamp': datetime.now().isoformat()
+                    }
+                    
+                    # Add location details if available
+                    if st.session_state.location_details and i < len(st.session_state.location_details):
+                        details = st.session_state.location_details[i]
+                        data_point.update({
+                            'country': details.get('country', ''),
+                            'state': details.get('state', ''),
+                            'city': details.get('city', ''),
+                            'full_address': details.get('full_address', '')
+                        })
+                    
+                    export_data.append(data_point)
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    if st.button("Export as CSV"):
+                        csv_data = data_exporter.to_csv(export_data)
+                        if csv_data:
+                            st.download_button(
+                                label="Download CSV",
+                                data=csv_data,
+                                file_name=f"geosint_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                                mime="text/csv"
+                            )
+                
+                with col2:
+                    if st.button("Export as JSON"):
+                        json_data = data_exporter.to_json(export_data)
+                        if json_data:
+                            st.download_button(
+                                label="Download JSON",
+                                data=json_data,
+                                file_name=f"geosint_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                                mime="application/json"
+                            )
+                
+                with col3:
+                    if st.button("Export as KML"):
+                        kml_data = data_exporter.to_kml(st.session_state.coordinates)
+                        if kml_data:
+                            st.download_button(
+                                label="Download KML",
+                                data=kml_data,
+                                file_name=f"geosint_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.kml",
+                                mime="application/vnd.google-earth.kml+xml"
+                            )
+                
+                # Search engine links
+                st.markdown("#### Search Engine Integration")
+                if st.session_state.coordinates:
+                    for i, (lat, lon) in enumerate(st.session_state.coordinates):
+                        with st.expander(f"Search Links for Location {i+1}"):
+                            search_urls = search_integration.generate_search_urls(lat, lon)
+                            
+                            cols = st.columns(3)
+                            for j, (engine, url) in enumerate(search_urls.items()):
+                                with cols[j % 3]:
+                                    st.link_button(engine, url, use_container_width=True)
+                
+                # Reverse image search
+                st.markdown("#### Reverse Image Search")
+                reverse_urls = search_integration.generate_reverse_image_search_urls()
+                cols = st.columns(2)
+                for i, (engine, url) in enumerate(reverse_urls.items()):
+                    with cols[i % 2]:
+                        st.link_button(f"Search on {engine}", url, use_container_width=True)
+            else:
+                st.info("No coordinates available for export")
         
         # Mostrar múltiples coordenadas candidatas
         if st.session_state.coordinates and len(st.session_state.coordinates) > 0:
