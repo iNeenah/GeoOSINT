@@ -44,6 +44,7 @@ class MetadataExtractor:
     def extract_gps_from_exif(self, image):
         """Extract GPS coordinates from image EXIF data"""
         try:
+            # Método 1: Usar _getexif()
             exif_dict = image._getexif()
             if exif_dict is not None:
                 gps_info = {}
@@ -56,9 +57,26 @@ class MetadataExtractor:
                 
                 if gps_info:
                     return self._convert_gps_to_decimal(gps_info)
+            
+            # Método 2: Usar getexif() (más moderno)
+            try:
+                exif = image.getexif()
+                if exif is not None:
+                    gps_ifd = exif.get_ifd(0x8825)  # GPS IFD
+                    if gps_ifd:
+                        gps_info = {}
+                        for key, val in gps_ifd.items():
+                            sub_key = GPSTAGS.get(key, key)
+                            gps_info[sub_key] = val
+                        
+                        if gps_info:
+                            return self._convert_gps_to_decimal(gps_info)
+            except Exception:
+                pass
+            
             return None
         except Exception as e:
-            st.warning(f"Could not extract GPS from EXIF: {e}")
+            print(f"Could not extract GPS from EXIF: {e}")
             return None
     
     def _convert_gps_to_decimal(self, gps_info):

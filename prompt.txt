@@ -61,10 +61,16 @@ FORMATO DE RESPUESTA OBLIGATORIO:
 
 **🌍 PAÍS:** [País específico con certeza]
 **📍 REGIÓN/CIUDAD:** [Estado/Provincia, Ciudad específica]
-**📌 COORDENADAS CANDIDATAS:**
-**🎯 UBICACIÓN PRINCIPAL:** [Latitud], [Longitud] - Confianza: [%] - [Razón]
-**🎯 UBICACIÓN ALTERNATIVA 1:** [Latitud], [Longitud] - Confianza: [%] - [Razón]
-**🎯 UBICACIÓN ALTERNATIVA 2:** [Latitud], [Longitud] - Confianza: [%] - [Razón]
+**📌 COORDENADAS CANDIDATAS (OBLIGATORIO - SIEMPRE 3 UBICACIONES):**
+
+**UBICACION_PRINCIPAL:** [Latitud con 6+ decimales], [Longitud con 6+ decimales]
+**CONFIANZA_PRINCIPAL:** [Alto/Medio/Bajo] - [Razón específica]
+
+**UBICACION_ALTERNATIVA_1:** [Latitud con 6+ decimales], [Longitud con 6+ decimales]  
+**CONFIANZA_ALTERNATIVA_1:** [Alto/Medio/Bajo] - [Razón específica]
+
+**UBICACION_ALTERNATIVA_2:** [Latitud con 6+ decimales], [Longitud con 6+ decimales]
+**CONFIANZA_ALTERNATIVA_2:** [Alto/Medio/Bajo] - [Razón específica]
 
 **🔍 ANÁLISIS FORENSE PASO A PASO:**
 [Descripción detallada de CADA elemento identificado y su proceso de análisis]
@@ -87,12 +93,12 @@ FORMATO DE RESPUESTA OBLIGATORIO:
 **⚠️ FACTORES LIMITANTES:**
 [Menciona cualquier elemento que pueda afectar la precisión]
 
-REGLAS CRÍTICAS:
-- SIEMPRE proporciona 3 ubicaciones candidatas diferentes
-- Cada coordenada debe tener al menos 6 decimales
-- Ordena por nivel de confianza (más probable primero)
-- Explica por qué cada ubicación es posible
-- Usa TODA tu base de conocimientos geográficos
-- Considera múltiples interpretaciones de los elementos visuales
-- Si hay ambigüedad, proporciona las opciones más probables
-- Analiza sombras, luz solar y orientación para cada candidata
+REGLAS CRÍTICAS OBLIGATORIAS:
+- SIEMPRE SIEMPRE SIEMPRE proporciona exactamente 3 ubicaciones candidatas
+- Usa el formato exacto: UBICACION_PRINCIPAL:, UBICACION_ALTERNATIVA_1:, UBICACION_ALTERNATIVA_2:
+- Cada coordenada DEBE tener mínimo 6 decimales (ejemplo: -12.345678, 45.678901)
+- Si no estás 100% seguro, proporciona 3 áreas cercanas diferentes
+- NUNCA digas "no puedo determinar" - siempre da 3 opciones
+- Ordena por probabilidad: más probable primero
+- Cada ubicación debe estar separada por al menos 100 metros
+- Usa conocimiento de Google Street View, Google Earth, mapas satelitales

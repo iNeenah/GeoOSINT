@@ -17,6 +17,15 @@ from geosint_utils import (
     DataExporter, 
     SearchEngineIntegration
 )
+from geomastr_features import (
+    ImageAnalysisTools,
+    WeatherAnalysis,
+    ArchitecturalAnalysis,
+    VegetationAnalysis,
+    TimeAnalysis,
+    AdvancedSearchTools,
+    CoordinateRefinement
+)
 
 # Configurar API de Gemini
 genai.configure(api_key=GEMINI_API_KEY)
@@ -41,6 +50,13 @@ reverse_geocoder = ReverseGeocoder()
 coord_validator = CoordinateValidator()
 data_exporter = DataExporter()
 search_integration = SearchEngineIntegration()
+image_tools = ImageAnalysisTools()
+weather_analysis = WeatherAnalysis()
+arch_analysis = ArchitecturalAnalysis()
+veg_analysis = VegetationAnalysis()
+time_analysis = TimeAnalysis()
+search_tools = AdvancedSearchTools()
+coord_refinement = CoordinateRefinement()
 
 # Cargar prompt OSINT
 def load_prompt():
@@ -107,62 +123,61 @@ def analyze_with_gemini(img, prompt):
                 st.error(f"❌ Error con todos los modelos de Gemini: {str(e3)}")
                 return None
 
-# Extraer múltiples coordenadas candidatas
+# Extraer múltiples coordenadas candidatas con patrones mejorados
 def extract_multiple_coordinates(text):
-    # Patrones para encontrar múltiples coordenadas
-    patterns = [
-        # Ubicación principal, alternativa 1, alternativa 2
-        r"PRINCIPAL.*?(\-?\d+\.\d{4,}),\s*(\-?\d+\.\d{4,}).*?ALTERNATIVA\s*1.*?(\-?\d+\.\d{4,}),\s*(\-?\d+\.\d{4,}).*?ALTERNATIVA\s*2.*?(\-?\d+\.\d{4,}),\s*(\-?\d+\.\d{4,})",
-        # Formato con números
-        r"1.*?(\-?\d+\.\d{4,}),\s*(\-?\d+\.\d{4,}).*?2.*?(\-?\d+\.\d{4,}),\s*(\-?\d+\.\d{4,}).*?3.*?(\-?\d+\.\d{4,}),\s*(\-?\d+\.\d{4,})",
-        # Formato general múltiple
-        r"(\-?\d+\.\d{4,}),\s*(\-?\d+\.\d{4,}).*?(\-?\d+\.\d{4,}),\s*(\-?\d+\.\d{4,}).*?(\-?\d+\.\d{4,}),\s*(\-?\d+\.\d{4,})"
-    ]
-    
     coordinates_list = []
     
-    for pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
-        if match:
-            coords = match.groups()
-            # Agrupar de a pares (lat, lon)
-            for i in range(0, len(coords), 2):
-                if i + 1 < len(coords):
-                    lat, lon = coords[i], coords[i + 1]
-                    try:
-                        lat_f, lon_f = float(lat), float(lon)
-                        if -90 <= lat_f <= 90 and -180 <= lon_f <= 180:
-                            coordinates_list.append((lat, lon))
-                    except ValueError:
-                        continue
-            
-            if len(coordinates_list) >= 2:
-                return coordinates_list[:3]  # Máximo 3 coordenadas
+    # Patrones específicos para el nuevo formato
+    patterns = [
+        # Formato exacto del prompt
+        r"UBICACION_PRINCIPAL:\s*(\-?\d+\.\d{4,}),\s*(\-?\d+\.\d{4,})",
+        r"UBICACION_ALTERNATIVA_1:\s*(\-?\d+\.\d{4,}),\s*(\-?\d+\.\d{4,})",
+        r"UBICACION_ALTERNATIVA_2:\s*(\-?\d+\.\d{4,}),\s*(\-?\d+\.\d{4,})"
+    ]
     
-    # Fallback: buscar coordenadas individuales
-    individual_patterns = [
+    # Buscar cada patrón específico
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            lat, lon = match.groups()
+            try:
+                lat_f, lon_f = float(lat), float(lon)
+                if -90 <= lat_f <= 90 and -180 <= lon_f <= 180:
+                    coordinates_list.append((lat, lon))
+            except ValueError:
+                continue
+    
+    # Si encontramos las 3 coordenadas específicas, las devolvemos
+    if len(coordinates_list) >= 3:
+        return coordinates_list[:3]
+    
+    # Fallback: buscar cualquier coordenada en el texto
+    fallback_patterns = [
         r"(\-?\d+\.\d{6,}),\s*(\-?\d+\.\d{6,})",
         r"(\-?\d+\.\d{4,}),\s*(\-?\d+\.\d{4,})",
         r"(\-?\d+\.\d{3,}),\s*(\-?\d+\.\d{3,})"
     ]
     
-    for pattern in individual_patterns:
+    all_coords = []
+    for pattern in fallback_patterns:
         matches = re.findall(pattern, text, re.IGNORECASE)
         for match in matches:
             lat, lon = match
             try:
                 lat_f, lon_f = float(lat), float(lon)
                 if -90 <= lat_f <= 90 and -180 <= lon_f <= 180:
-                    if (lat, lon) not in coordinates_list:
-                        coordinates_list.append((lat, lon))
-                        if len(coordinates_list) >= 3:
-                            break
+                    coord_tuple = (lat, lon)
+                    if coord_tuple not in all_coords:
+                        all_coords.append(coord_tuple)
             except ValueError:
                 continue
-        if len(coordinates_list) >= 3:
-            break
     
-    return coordinates_list if coordinates_list else None
+    # Si tenemos coordenadas del fallback, tomar las primeras 3
+    if all_coords:
+        return all_coords[:3]
+    
+    # Si no encontramos nada, devolver None
+    return None
 
 # Configuración de la página
 st.set_page_config(
@@ -541,22 +556,34 @@ with col1:
             
             # Extract metadata and EXIF data
             with st.spinner("Extracting metadata..."):
-                # Try to extract GPS from EXIF
-                gps_coords = metadata_extractor.extract_gps_from_exif(image)
-                
-                # Extract other EXIF data
-                uploaded_file.seek(0)  # Reset file pointer
-                exif_data = metadata_extractor.extract_exif_data(uploaded_file)
-                
-                st.session_state.metadata = {
-                    'gps_coordinates': gps_coords,
-                    'exif_data': exif_data,
-                    'file_info': {
-                        'filename': uploaded_file.name,
-                        'size': uploaded_file.size,
-                        'type': uploaded_file.type
+                try:
+                    # Try to extract GPS from EXIF
+                    gps_coords = metadata_extractor.extract_gps_from_exif(image)
+                    
+                    # Extract other EXIF data
+                    uploaded_file.seek(0)  # Reset file pointer
+                    exif_data = metadata_extractor.extract_exif_data(uploaded_file)
+                    
+                    st.session_state.metadata = {
+                        'gps_coordinates': gps_coords,
+                        'exif_data': exif_data,
+                        'file_info': {
+                            'filename': uploaded_file.name,
+                            'size': uploaded_file.size,
+                            'type': uploaded_file.type
+                        }
                     }
-                }
+                except Exception as e:
+                    st.session_state.metadata = {
+                        'gps_coordinates': None,
+                        'exif_data': {},
+                        'file_info': {
+                            'filename': uploaded_file.name,
+                            'size': uploaded_file.size,
+                            'type': uploaded_file.type
+                        },
+                        'error': str(e)
+                    }
             
             st.success("Image loaded successfully")
             
@@ -674,8 +701,8 @@ with col2:
     # Mostrar resultados si existen
     if st.session_state.analysis_result:
         # Crear tabs para diferentes tipos de información
-        result_tab1, result_tab2, result_tab3, result_tab4 = st.tabs([
-            "AI Analysis", "Metadata", "Location Details", "Export"
+        result_tab1, result_tab2, result_tab3, result_tab4, result_tab5 = st.tabs([
+            "AI Analysis", "Advanced Analysis", "Metadata", "Location Details", "Export"
         ])
         
         with result_tab1:
@@ -685,6 +712,101 @@ with col2:
             st.markdown('</div>', unsafe_allow_html=True)
         
         with result_tab2:
+            st.markdown("### Advanced OSINT Analysis")
+            
+            if st.session_state.current_image and st.session_state.analysis_result:
+                # Image properties analysis
+                st.markdown("#### Image Properties")
+                image_props = image_tools.analyze_image_properties(st.session_state.current_image)
+                
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Format", image_props.get('format', 'Unknown'))
+                    st.metric("Mode", image_props.get('mode', 'Unknown'))
+                with col2:
+                    st.metric("Width", f"{image_props.get('width', 0)} px")
+                    st.metric("Height", f"{image_props.get('height', 0)} px")
+                with col3:
+                    st.metric("DPI", str(image_props.get('dpi', 'Unknown')))
+                    st.metric("Transparency", "Yes" if image_props.get('has_transparency') else "No")
+                
+                # Weather analysis
+                st.markdown("#### Climate Analysis")
+                weather_clues = weather_analysis.analyze_weather_clues(st.session_state.analysis_result)
+                if weather_clues:
+                    st.success(f"Detected climate types: {', '.join(weather_clues)}")
+                else:
+                    st.info("No specific climate indicators detected")
+                
+                # Architectural analysis
+                st.markdown("#### Architectural Analysis")
+                arch_styles = arch_analysis.identify_architectural_style(st.session_state.analysis_result)
+                if arch_styles:
+                    st.success(f"Detected architectural regions: {', '.join(arch_styles)}")
+                else:
+                    st.info("No specific architectural styles detected")
+                
+                # Vegetation analysis
+                st.markdown("#### Vegetation Analysis")
+                vegetation_regions = veg_analysis.analyze_vegetation(st.session_state.analysis_result)
+                if vegetation_regions:
+                    st.success(f"Detected vegetation regions: {', '.join(vegetation_regions)}")
+                else:
+                    st.info("No specific vegetation indicators detected")
+                
+                # Time analysis
+                st.markdown("#### Time & Lighting Analysis")
+                time_clues = time_analysis.analyze_lighting_clues(st.session_state.analysis_result)
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    if time_clues['time_of_day']:
+                        st.metric("Time of Day", ', '.join(time_clues['time_of_day']))
+                    else:
+                        st.metric("Time of Day", "Unknown")
+                
+                with col2:
+                    if time_clues['season']:
+                        st.metric("Season", ', '.join(time_clues['season']))
+                    else:
+                        st.metric("Season", "Unknown")
+                
+                # Advanced search queries
+                st.markdown("#### Suggested Search Queries")
+                search_queries = search_tools.generate_search_queries(st.session_state.analysis_result)
+                if search_queries:
+                    for i, query in enumerate(search_queries):
+                        st.code(query)
+                        google_search_url = f"https://www.google.com/search?q={quote(query)}"
+                        st.link_button(f"Search Query {i+1}", google_search_url, use_container_width=True)
+                else:
+                    st.info("No specific search queries generated")
+                
+                # Coordinate refinement
+                if st.session_state.coordinates:
+                    st.markdown("#### Coordinate Refinement")
+                    for i, (lat, lon) in enumerate(st.session_state.coordinates):
+                        with st.expander(f"Refinement for Location {i+1}"):
+                            refinement = coord_refinement.refine_coordinates_with_landmarks(
+                                lat, lon, st.session_state.analysis_result
+                            )
+                            
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.metric("Confidence Score", f"{refinement['confidence_score']}%")
+                            with col2:
+                                precision_radius = coord_refinement.calculate_precision_radius(
+                                    "high" if refinement['confidence_score'] > 75 else 
+                                    "medium" if refinement['confidence_score'] > 50 else "low"
+                                )
+                                st.metric("Precision Radius", f"{precision_radius}m")
+                            
+                            if refinement['confidence_factors']:
+                                st.success(f"Confidence factors: {', '.join(refinement['confidence_factors'])}")
+            else:
+                st.info("Complete an analysis first to see advanced features")
+        
+        with result_tab3:
             st.markdown("### Image Metadata")
             if st.session_state.metadata:
                 metadata = st.session_state.metadata
@@ -739,7 +861,7 @@ with col2:
             else:
                 st.info("No metadata available")
         
-        with result_tab3:
+        with result_tab4:
             st.markdown("### Location Details")
             if st.session_state.location_details:
                 for i, details in enumerate(st.session_state.location_details):
@@ -780,7 +902,7 @@ with col2:
                         distance_df = pd.DataFrame(distances)
                         st.dataframe(distance_df, use_container_width=True)
         
-        with result_tab4:
+        with result_tab5:
             st.markdown("### Export Results")
             
             if st.session_state.coordinates:
@@ -841,25 +963,22 @@ with col2:
                                 mime="application/vnd.google-earth.kml+xml"
                             )
                 
-                # Search engine links
-                st.markdown("#### Search Engine Integration")
+                # Advanced verification links
+                st.markdown("#### Advanced Verification Links")
                 if st.session_state.coordinates:
                     for i, (lat, lon) in enumerate(st.session_state.coordinates):
-                        with st.expander(f"Search Links for Location {i+1}"):
-                            search_urls = search_integration.generate_search_urls(lat, lon)
+                        with st.expander(f"Verification Links for Location {i+1}"):
+                            verification_links = search_tools.generate_verification_links(
+                                lat, lon, st.session_state.analysis_result
+                            )
                             
-                            cols = st.columns(3)
-                            for j, (engine, url) in enumerate(search_urls.items()):
-                                with cols[j % 3]:
-                                    st.link_button(engine, url, use_container_width=True)
-                
-                # Reverse image search
-                st.markdown("#### Reverse Image Search")
-                reverse_urls = search_integration.generate_reverse_image_search_urls()
-                cols = st.columns(2)
-                for i, (engine, url) in enumerate(reverse_urls.items()):
-                    with cols[i % 2]:
-                        st.link_button(f"Search on {engine}", url, use_container_width=True)
+                            for category, links in verification_links.items():
+                                st.markdown(f"**{category}**")
+                                cols = st.columns(min(len(links), 3))
+                                for j, (name, url) in enumerate(links.items()):
+                                    with cols[j % len(cols)]:
+                                        st.link_button(name, url, use_container_width=True)
+                                st.markdown("---")
             else:
                 st.info("No coordinates available for export")
         
