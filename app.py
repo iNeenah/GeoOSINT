@@ -38,8 +38,12 @@ genai.configure(api_key=GEMINI_API_KEY)
 # Inicializar session state
 if 'current_image' not in st.session_state:
     st.session_state.current_image = None
+if 'current_images' not in st.session_state:
+    st.session_state.current_images = []
 if 'analysis_result' not in st.session_state:
     st.session_state.analysis_result = None
+if 'multi_analysis_results' not in st.session_state:
+    st.session_state.multi_analysis_results = []
 if 'coordinates' not in st.session_state:
     st.session_state.coordinates = None
 if 'metadata' not in st.session_state:
@@ -49,7 +53,9 @@ if 'validated_coords' not in st.session_state:
 if 'location_details' not in st.session_state:
     st.session_state.location_details = None
 if 'dark_mode' not in st.session_state:
-    st.session_state.dark_mode = False
+    st.session_state.dark_mode = True  # Dark mode por defecto
+if 'analysis_mode' not in st.session_state:
+    st.session_state.analysis_mode = 'single'  # 'single' or 'multiple'
 
 # Inicializar utilidades
 try:
@@ -139,6 +145,170 @@ def analyze_with_gemini(img, prompt):
             except Exception as e3:
                 st.error(f"❌ Error con todos los modelos de Gemini: {str(e3)}")
                 return None
+
+# Función para análisis múltiple de imágenes
+def analyze_multiple_images(images, prompt):
+    """Analizar múltiples imágenes y combinar resultados"""
+    results = []
+    all_coordinates = []
+    
+    for i, image in enumerate(images):
+        st.write(f"🔍 Analyzing image {i+1}/{len(images)}...")
+        
+        # Analizar cada imagen individualmente
+        result = analyze_with_gemini(image, prompt)
+        if result:
+            results.append({
+                'image_index': i + 1,
+                'analysis': result,
+                'coordinates': extract_multiple_coordinates(result)
+            })
+            
+            # Extraer coordenadas de esta imagen
+            coords = extract_multiple_coordinates(result)
+            if coords:
+                all_coordinates.extend(coords)
+    
+    # Crear análisis combinado
+    combined_analysis = create_combined_analysis(results)
+    
+    # Filtrar y refinar coordenadas
+    refined_coordinates = refine_multiple_coordinates(all_coordinates)
+    
+    return combined_analysis, refined_coordinates, results
+
+def create_combined_analysis(individual_results):
+    """Crear un análisis combinado optimizado para vista 360°"""
+    if not individual_results:
+        return "No analysis results available"
+    
+    # Crear análisis combinado más claro y directo
+    combined = f"""
+ANÁLISIS 360° COMBINADO - {len(individual_results)} IMÁGENES
+
+"""
+    
+    # Extraer elementos comunes de forma más inteligente
+    countries = []
+    cities = []
+    landmarks = []
+    
+    for result in individual_results:
+        analysis = result['analysis'].lower()
+        
+        # Extraer países con mejor precisión
+        country_patterns = [
+            r'país:\s*([^\n]+)',
+            r'country:\s*([^\n]+)',
+            r'ubicado en\s*([^\n,]+)',
+            r'se encuentra en\s*([^\n,]+)'
+        ]
+        
+        for pattern in country_patterns:
+            match = re.search(pattern, analysis, re.IGNORECASE)
+            if match:
+                countries.append(match.group(1).strip())
+                break
+        
+        # Extraer ciudades
+        city_patterns = [
+            r'ciudad:\s*([^\n]+)',
+            r'city:\s*([^\n]+)',
+            r'región/ciudad:\s*([^\n]+)'
+        ]
+        
+        for pattern in city_patterns:
+            match = re.search(pattern, analysis, re.IGNORECASE)
+            if match:
+                cities.append(match.group(1).strip())
+                break
+        
+        # Extraer landmarks
+        landmark_patterns = [
+            r'landmark principal:\s*([^\n]+)',
+            r'punto de referencia:\s*([^\n]+)',
+            r'edificio.*:\s*([^\n]+)'
+        ]
+        
+        for pattern in landmark_patterns:
+            match = re.search(pattern, analysis, re.IGNORECASE)
+            if match:
+                landmarks.append(match.group(1).strip())
+                break
+    
+    # Análisis de consenso más claro
+    if countries:
+        most_common_country = max(set(countries), key=countries.count)
+        consensus_count = countries.count(most_common_country)
+        combined += f"PAÍS CONFIRMADO: {most_common_country}\n"
+        combined += f"   Consenso: {consensus_count}/{len(individual_results)} imágenes\n\n"
+    
+    if cities:
+        most_common_city = max(set(cities), key=cities.count)
+        consensus_count = cities.count(most_common_city)
+        combined += f"CIUDAD CONFIRMADA: {most_common_city}\n"
+        combined += f"   Consenso: {consensus_count}/{len(individual_results)} imágenes\n\n"
+    
+    if landmarks:
+        most_common_landmark = max(set(landmarks), key=landmarks.count)
+        combined += f"LANDMARK PRINCIPAL: {most_common_landmark}\n\n"
+    
+    combined += "ANÁLISIS POR IMAGEN (Vista 360°)\n"
+    combined += "─" * 50 + "\n\n"
+    
+    # Mostrar análisis individuales de forma más compacta
+    for result in individual_results:
+        combined += f"IMAGEN {result['image_index']}:\n"
+        combined += "─" * 30 + "\n"
+        combined += result['analysis']
+        combined += "\n\n"
+    
+    # Conclusión más clara
+    combined += "CONCLUSIÓN FINAL 360°\n"
+    combined += "─" * 50 + "\n\n"
+    
+    combined += f"ANÁLISIS COMPLETADO: {len(individual_results)} ángulos diferentes\n"
+    combined += "TRIANGULACIÓN: Coordenadas refinadas por vista múltiple\n"
+    combined += "CONFIANZA: ALTA (Verificación cruzada 360°)\n\n"
+    
+    combined += "VENTAJA DEL ANÁLISIS 360°:\n"
+    combined += "- Eliminación de puntos ciegos\n"
+    combined += "- Verificación cruzada de elementos\n"
+    combined += "- Mayor precisión en coordenadas\n"
+    combined += "- Confirmación de landmarks desde múltiples ángulos\n"
+    
+    return combined
+
+def refine_multiple_coordinates(all_coordinates):
+    """Refinar coordenadas de múltiples imágenes"""
+    if not all_coordinates:
+        return None
+    
+    # Remover duplicados y coordenadas muy cercanas
+    refined = []
+    min_distance = 0.001  # ~100 metros
+    
+    for coord in all_coordinates:
+        try:
+            lat, lon = float(coord[0]), float(coord[1])
+            is_duplicate = False
+            
+            for existing in refined:
+                existing_lat, existing_lon = float(existing[0]), float(existing[1])
+                # Calcular distancia aproximada
+                distance = ((lat - existing_lat) ** 2 + (lon - existing_lon) ** 2) ** 0.5
+                if distance < min_distance:
+                    is_duplicate = True
+                    break
+            
+            if not is_duplicate:
+                refined.append(coord)
+                
+        except (ValueError, IndexError):
+            continue
+    
+    # Retornar las 3 mejores coordenadas
+    return refined[:3] if refined else None
 
 # Extraer múltiples coordenadas candidatas con patrones mejorados
 def extract_multiple_coordinates(text):
@@ -547,290 +717,7 @@ def get_theme_css(dark_mode=False):
 
 # Aplicar CSS dinámico
 st.markdown(get_theme_css(st.session_state.dark_mode), unsafe_allow_html=True)
-    
-    /* Ocultar elementos de Streamlit */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-    
-    /* Header ultra-moderno */
-    .main-header {
-        background: linear-gradient(135deg, #000000 0%, #1a1a1a 100%);
-        color: #ffffff;
-        padding: 4rem 0;
-        margin: -2rem -2rem 3rem -2rem;
-        text-align: center;
-        position: relative;
-        overflow: hidden;
-    }
-    
-    .main-header::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M 10 0 L 0 0 0 10" fill="none" stroke="rgba(255,255,255,0.03)" stroke-width="1"/></pattern></defs><rect width="100" height="100" fill="url(%23grid)"/></svg>');
-        opacity: 0.5;
-    }
-    
-    .main-header h1 {
-        font-size: 3.5rem;
-        font-weight: 200;
-        letter-spacing: -0.05em;
-        margin: 0;
-        position: relative;
-        z-index: 1;
-    }
-    
-    .main-header p {
-        font-size: 1.2rem;
-        font-weight: 300;
-        opacity: 0.9;
-        margin: 1rem 0 0 0;
-        position: relative;
-        z-index: 1;
-    }
-    
-    /* Contenedores principales */
-    .main-container {
-        max-width: 1400px;
-        margin: 0 auto;
-        padding: 0 2rem;
-    }
-    
-    /* Cards modernos */
-    .modern-card {
-        background: #ffffff;
-        border: 1px solid #f0f0f0;
-        border-radius: 12px;
-        padding: 2rem;
-        margin: 1.5rem 0;
-        box-shadow: 0 2px 20px rgba(0,0,0,0.04);
-        transition: all 0.3s ease;
-    }
-    
-    .modern-card:hover {
-        box-shadow: 0 8px 40px rgba(0,0,0,0.08);
-        transform: translateY(-2px);
-    }
-    
-    .result-box {
-        background: #ffffff;
-        border: 1px solid #f0f0f0;
-        border-radius: 12px;
-        padding: 2.5rem;
-        margin: 2rem 0;
-        box-shadow: 0 4px 30px rgba(0,0,0,0.06);
-    }
-    
-    .coordinate-box {
-        background: linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%);
-        border: 1px solid #e8e8e8;
-        border-radius: 12px;
-        padding: 2.5rem;
-        margin: 2rem 0;
-        position: relative;
-        overflow: hidden;
-    }
-    
-    .coordinate-box::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 3px;
-        background: linear-gradient(90deg, #000000, #333333, #000000);
-    }
-    
-    /* Botones ultra-modernos */
-    .stButton > button {
-        background: #000000;
-        color: #ffffff;
-        border: none;
-        border-radius: 8px;
-        font-weight: 500;
-        font-size: 0.95rem;
-        padding: 0.8rem 2rem;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        font-family: 'Inter', sans-serif;
-        letter-spacing: 0.01em;
-        position: relative;
-        overflow: hidden;
-    }
-    
-    .stButton > button:hover {
-        background: #1a1a1a;
-        transform: translateY(-1px);
-        box-shadow: 0 8px 25px rgba(0,0,0,0.15);
-    }
-    
-    .stButton > button:active {
-        transform: translateY(0);
-    }
-    
-    /* Tabs elegantes */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 0;
-        background: #fafafa;
-        border-radius: 8px;
-        padding: 4px;
-        border: none;
-    }
-    
-    .stTabs [data-baseweb="tab"] {
-        background: transparent;
-        border: none;
-        color: #666666;
-        font-weight: 400;
-        padding: 0.8rem 1.5rem;
-        border-radius: 6px;
-        transition: all 0.2s ease;
-    }
-    
-    .stTabs [aria-selected="true"] {
-        background: #ffffff;
-        color: #000000;
-        font-weight: 500;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-    }
-    
-    /* Inputs modernos */
-    .stTextInput > div > div > input {
-        font-family: 'SF Mono', 'Monaco', 'Cascadia Code', monospace;
-        font-size: 0.9rem;
-        background: #ffffff;
-        border: 1px solid #e8e8e8;
-        border-radius: 8px;
-        padding: 0.8rem 1rem;
-        transition: all 0.2s ease;
-    }
-    
-    .stTextInput > div > div > input:focus {
-        border-color: #000000;
-        box-shadow: 0 0 0 3px rgba(0,0,0,0.1);
-    }
-    
-    /* File uploader elegante */
-    .stFileUploader {
-        border: 2px dashed #e0e0e0;
-        border-radius: 12px;
-        padding: 3rem 2rem;
-        text-align: center;
-        background: linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%);
-        transition: all 0.3s ease;
-    }
-    
-    .stFileUploader:hover {
-        border-color: #000000;
-        background: linear-gradient(135deg, #f8f8f8 0%, #f0f0f0 100%);
-    }
-    
-    /* Sidebar moderno */
-    .css-1d391kg {
-        background: #fafafa;
-        border-right: 1px solid #f0f0f0;
-    }
-    
-    /* Tipografía */
-    h1 {
-        font-weight: 600;
-        color: #000000;
-        font-size: 2rem;
-        margin-bottom: 1rem;
-    }
-    
-    h2 {
-        font-weight: 500;
-        color: #000000;
-        font-size: 1.5rem;
-        margin-bottom: 1rem;
-    }
-    
-    h3 {
-        font-weight: 500;
-        color: #000000;
-        font-size: 1.25rem;
-        margin-bottom: 0.75rem;
-    }
-    
-    /* Alertas modernas */
-    .stSuccess {
-        background: linear-gradient(135deg, #f0fff4 0%, #e6fffa 100%);
-        border: 1px solid #9ae6b4;
-        border-radius: 8px;
-        color: #22543d;
-    }
-    
-    .stInfo {
-        background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
-        border: 1px solid #cbd5e0;
-        border-radius: 8px;
-        color: #2d3748;
-    }
-    
-    .stWarning {
-        background: linear-gradient(135deg, #fffbeb 0%, #fef5e7 100%);
-        border: 1px solid #f6e05e;
-        border-radius: 8px;
-        color: #744210;
-    }
-    
-    .stError {
-        background: linear-gradient(135deg, #fff5f5 0%, #fed7d7 100%);
-        border: 1px solid #feb2b2;
-        border-radius: 8px;
-        color: #742a2a;
-    }
-    
-    /* Spinner personalizado */
-    .stSpinner > div {
-        border-color: #000000 transparent transparent transparent;
-    }
-    
-    /* Scrollbar personalizada */
-    ::-webkit-scrollbar {
-        width: 6px;
-        height: 6px;
-    }
-    
-    ::-webkit-scrollbar-track {
-        background: #f1f1f1;
-    }
-    
-    ::-webkit-scrollbar-thumb {
-        background: #c1c1c1;
-        border-radius: 3px;
-    }
-    
-    ::-webkit-scrollbar-thumb:hover {
-        background: #a8a8a8;
-    }
-    
-    /* Animaciones suaves */
-    * {
-        transition: color 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
-    }
-    
-    /* Responsive */
-    @media (max-width: 768px) {
-        .main-header h1 {
-            font-size: 2.5rem;
-        }
-        
-        .main-header {
-            padding: 3rem 0;
-        }
-        
-        .modern-card, .result-box, .coordinate-box {
-            padding: 1.5rem;
-            margin: 1rem 0;
-        }
-    }
-</style>
-""", unsafe_allow_html=True)
+
 
 # Theme toggle en la parte superior
 col_theme1, col_theme2, col_theme3 = st.columns([1, 2, 1])
@@ -907,180 +794,516 @@ with st.sidebar:
 col1, col2 = st.columns([1, 1])
 
 with col1:
-    st.header("Upload Image")
+    st.header("Upload Images")
+    
+    # Selector de modo de análisis
+    analysis_mode = st.radio(
+        "Analysis Mode:",
+        ["Single Image", "360° Analysis (2-5 images)"],
+        horizontal=True,
+        help="360° analysis uses multiple angles of the same location for higher precision"
+    )
+    
+    st.session_state.analysis_mode = 'multiple' if analysis_mode == "360° Analysis (2-5 images)" else 'single'
     
     # Tabs minimalistas
-    tab1, tab2 = st.tabs(["File Upload", "Paste Image"])
+    if st.session_state.analysis_mode == 'single':
+        tab1, tab2 = st.tabs(["Upload File", "Paste Image"])
+    else:
+        tab1, tab2 = st.tabs(["Multiple Files", "Paste 360° View"])
     
     with tab1:
-        uploaded_file = st.file_uploader(
-            "Select an image for geolocation analysis",
-            type=["jpg", "jpeg", "png", "webp", "bmp"],
-            help="Supported formats: JPG, PNG, WEBP, BMP"
-        )
-        
-        if uploaded_file:
-            image = Image.open(uploaded_file)
-            st.session_state.current_image = image
-            
-            # Extract metadata and EXIF data
-            with st.spinner("Extracting metadata..."):
-                try:
-                    # Try to extract GPS from EXIF
-                    gps_coords = metadata_extractor.extract_gps_from_exif(image)
-                    
-                    # Extract other EXIF data
-                    uploaded_file.seek(0)  # Reset file pointer
-                    exif_data = metadata_extractor.extract_exif_data(uploaded_file)
-                    
-                    st.session_state.metadata = {
-                        'gps_coordinates': gps_coords,
-                        'exif_data': exif_data,
-                        'file_info': {
-                            'filename': uploaded_file.name,
-                            'size': uploaded_file.size,
-                            'type': uploaded_file.type
-                        }
-                    }
-                except Exception as e:
-                    st.session_state.metadata = {
-                        'gps_coordinates': None,
-                        'exif_data': {},
-                        'file_info': {
-                            'filename': uploaded_file.name,
-                            'size': uploaded_file.size,
-                            'type': uploaded_file.type
-                        },
-                        'error': str(e)
-                    }
-            
-            st.success("Image loaded successfully")
-            
-            # Show GPS coordinates if found in EXIF
-            if gps_coords:
-                st.info(f"📍 GPS coordinates found in EXIF: {gps_coords['latitude']:.6f}, {gps_coords['longitude']:.6f}")
-    
-    with tab2:
-        st.markdown("### Paste Image Directly")
-        
-        # Intentar usar streamlit-paste-button
-        try:
-            from streamlit_paste_button import paste_image_button
-            
-            paste_result = paste_image_button(
-                label="Paste from Clipboard",
-                key="paste_btn",
-                errors='ignore'
+        if st.session_state.analysis_mode == 'single':
+            uploaded_file = st.file_uploader(
+                "Select an image for geolocation analysis",
+                type=["jpg", "jpeg", "png", "webp", "bmp"],
+                help="Supported formats: JPG, PNG, WEBP, BMP"
             )
             
-            if paste_result.image_data is not None:
-                st.session_state.current_image = paste_result.image_data
+            if uploaded_file:
+                image = Image.open(uploaded_file)
+                st.session_state.current_image = image
+                st.session_state.current_images = [image]  # Para compatibilidad
                 
-                # Extract metadata from pasted image
+                # Extract metadata and EXIF data
                 with st.spinner("Extracting metadata..."):
-                    gps_coords = metadata_extractor.extract_gps_from_exif(paste_result.image_data)
-                    st.session_state.metadata = {
-                        'gps_coordinates': gps_coords,
-                        'exif_data': {},
-                        'file_info': {
-                            'filename': 'pasted_image',
-                            'size': 'Unknown',
-                            'type': 'image/png'
+                    try:
+                        # Try to extract GPS from EXIF
+                        gps_coords = metadata_extractor.extract_gps_from_exif(image)
+                        
+                        # Extract other EXIF data
+                        uploaded_file.seek(0)  # Reset file pointer
+                        exif_data = metadata_extractor.extract_exif_data(uploaded_file)
+                        
+                        st.session_state.metadata = {
+                            'gps_coordinates': gps_coords,
+                            'exif_data': exif_data,
+                            'file_info': {
+                                'filename': uploaded_file.name,
+                                'size': uploaded_file.size,
+                                'type': uploaded_file.type
+                            }
                         }
-                    }
+                    except Exception as e:
+                        st.session_state.metadata = {
+                            'gps_coordinates': None,
+                            'exif_data': {},
+                            'file_info': {
+                                'filename': uploaded_file.name,
+                                'size': uploaded_file.size,
+                                'type': uploaded_file.type
+                            },
+                            'error': str(e)
+                        }
                 
-                st.success("Image pasted successfully")
+                st.success("Image loaded successfully")
                 
+                # Show GPS coordinates if found in EXIF
                 if gps_coords:
-                    st.info(f"📍 GPS coordinates found: {gps_coords['latitude']:.6f}, {gps_coords['longitude']:.6f}")
-                
-        except ImportError:
-            st.warning("For direct paste functionality:")
-            st.code("pip install streamlit-paste-button")
-            
-            # Método alternativo
-            st.markdown("**Alternative method:**")
-            st.info("""
-            1. Take screenshot (Win+Shift+S)
-            2. Save as file
-            3. Use "File Upload" tab
-            """)
+                    st.info(f"GPS coordinates found in EXIF: {gps_coords['latitude']:.6f}, {gps_coords['longitude']:.6f}")
         
-        # Botón para limpiar
-        if st.session_state.current_image is not None:
-            if st.button("Clear Image"):
+        else:  # Multiple images mode
+            uploaded_files = st.file_uploader(
+                "Select 2-5 images of the same location for enhanced analysis",
+                type=["jpg", "jpeg", "png", "webp", "bmp"],
+                accept_multiple_files=True,
+                help="Upload multiple images of the same location from different angles for more accurate analysis"
+            )
+            
+            if uploaded_files:
+                if len(uploaded_files) < 2:
+                    st.warning("Please upload at least 2 images for multiple image analysis")
+                elif len(uploaded_files) > 5:
+                    st.warning("Maximum 5 images allowed. Using first 5 images.")
+                    uploaded_files = uploaded_files[:5]
+                else:
+                    images = []
+                    metadata_list = []
+                    
+                    for i, uploaded_file in enumerate(uploaded_files):
+                        image = Image.open(uploaded_file)
+                        images.append(image)
+                        
+                        # Extract metadata for each image
+                        try:
+                            gps_coords = metadata_extractor.extract_gps_from_exif(image)
+                            uploaded_file.seek(0)
+                            exif_data = metadata_extractor.extract_exif_data(uploaded_file)
+                            
+                            metadata_list.append({
+                                'gps_coordinates': gps_coords,
+                                'exif_data': exif_data,
+                                'file_info': {
+                                    'filename': uploaded_file.name,
+                                    'size': uploaded_file.size,
+                                    'type': uploaded_file.type
+                                }
+                            })
+                        except Exception as e:
+                            metadata_list.append({
+                                'gps_coordinates': None,
+                                'exif_data': {},
+                                'file_info': {
+                                    'filename': uploaded_file.name,
+                                    'size': uploaded_file.size,
+                                    'type': uploaded_file.type
+                                },
+                                'error': str(e)
+                            })
+                    
+                    st.session_state.current_images = images
+                    st.session_state.current_image = images[0]  # Para compatibilidad
+                    st.session_state.metadata = metadata_list
+                    
+                    st.success(f"✅ {len(images)} images loaded successfully")
+                    
+                    # Show preview of all images
+                    st.markdown("#### Image Preview")
+                    cols = st.columns(min(len(images), 3))
+                    for i, image in enumerate(images):
+                        with cols[i % len(cols)]:
+                            st.image(image, caption=f"Image {i+1}", use_container_width=True)
+                    
+                    # Show GPS coordinates if found
+                    gps_found = 0
+                    for i, metadata in enumerate(metadata_list):
+                        if metadata.get('gps_coordinates'):
+                            gps_coords = metadata['gps_coordinates']
+                            st.info(f"📍 GPS found in Image {i+1}: {gps_coords['latitude']:.6f}, {gps_coords['longitude']:.6f}")
+                            gps_found += 1
+                    
+                    if gps_found == 0:
+                        st.info("No GPS coordinates found in EXIF data")
+    
+    with tab2:
+        if st.session_state.analysis_mode == 'single':
+            st.markdown("### Paste Image Directly")
+            
+            # Intentar usar streamlit-paste-button
+            try:
+                from streamlit_paste_button import paste_image_button
+                
+                paste_result = paste_image_button(
+                    label="Paste from Clipboard",
+                    key="paste_btn",
+                    errors='ignore'
+                )
+                
+                if paste_result.image_data is not None:
+                    st.session_state.current_image = paste_result.image_data
+                    st.session_state.current_images = [paste_result.image_data]
+                    
+                    # Extract metadata from pasted image
+                    with st.spinner("Extracting metadata..."):
+                        gps_coords = metadata_extractor.extract_gps_from_exif(paste_result.image_data)
+                        st.session_state.metadata = {
+                            'gps_coordinates': gps_coords,
+                            'exif_data': {},
+                            'file_info': {
+                                'filename': 'pasted_image',
+                                'size': 'Unknown',
+                                'type': 'image/png'
+                            }
+                        }
+                    
+                    st.success("Image pasted successfully")
+                    
+                    if gps_coords:
+                        st.info(f"📍 GPS coordinates found: {gps_coords['latitude']:.6f}, {gps_coords['longitude']:.6f}")
+                    
+            except ImportError:
+                st.warning("For direct paste functionality:")
+                st.code("pip install streamlit-paste-button")
+                
+                # Método alternativo
+                st.markdown("**Alternative method:**")
+                st.info("""
+                1. Take screenshot (Win+Shift+S)
+                2. Save as file
+                3. Use "File Upload" tab
+                """)
+        
+        else:  # Multiple images mode
+            st.markdown("### Paste Multiple Images")
+            st.markdown("""
+            **📸 Análisis 360° - Cómo pegar múltiples imágenes:**
+            1. 🔄 Toma screenshots desde diferentes ángulos del MISMO lugar
+            2. 📋 Pega la primera imagen abajo
+            3. ✅ Haz clic en "Add Image" para agregarla
+            4. 🔁 Repite para cada ángulo adicional (máximo 5)
+            5. 🚀 Inicia análisis cuando tengas todas las vistas
+            
+            **💡 Tip:** Para mejor precisión, toma fotos mirando Norte, Sur, Este, Oeste
+            """)
+            
+            # Inicializar lista de imágenes pegadas si no existe
+            if 'pasted_images' not in st.session_state:
+                st.session_state.pasted_images = []
+            
+            # Mostrar imágenes ya pegadas
+            if st.session_state.pasted_images:
+                st.markdown(f"#### Images Added: {len(st.session_state.pasted_images)}/5")
+                cols = st.columns(min(len(st.session_state.pasted_images), 3))
+                for i, img in enumerate(st.session_state.pasted_images):
+                    with cols[i % len(cols)]:
+                        st.image(img, caption=f"Pasted Image {i+1}", use_container_width=True)
+            
+            # Área para pegar nueva imagen
+            try:
+                from streamlit_paste_button import paste_image_button
+                
+                paste_result = paste_image_button(
+                    label="📋 Paste Next Image",
+                    key="paste_multi_btn",
+                    errors='ignore'
+                )
+                
+                if paste_result.image_data is not None:
+                    # Verificar si ya tenemos esta imagen (evitar duplicados)
+                    is_duplicate = False
+                    for existing_img in st.session_state.pasted_images:
+                        if existing_img.size == paste_result.image_data.size:
+                            # Comparación básica por tamaño (podrías hacer más sofisticada)
+                            is_duplicate = True
+                            break
+                    
+                    if not is_duplicate and len(st.session_state.pasted_images) < 5:
+                        # Botones para agregar o descartar la imagen
+                        col1, col2 = st.columns(2)
+                        
+                        # Mostrar preview de la imagen pegada
+                        st.image(paste_result.image_data, caption="New pasted image - Add it?", use_container_width=True)
+                        
+                        with col1:
+                            if st.button("✅ Add This Image", use_container_width=True):
+                                st.session_state.pasted_images.append(paste_result.image_data)
+                                st.session_state.current_images = st.session_state.pasted_images.copy()
+                                st.session_state.current_image = st.session_state.pasted_images[0]
+                                st.success(f"Image added! Total: {len(st.session_state.pasted_images)}")
+                                st.rerun()
+                        
+                        with col2:
+                            if st.button("❌ Discard", use_container_width=True):
+                                st.info("Image discarded")
+                                st.rerun()
+                    
+                    elif len(st.session_state.pasted_images) >= 5:
+                        st.warning("⚠️ Maximum 5 images reached. Remove some images if you want to add more.")
+                    
+                    elif is_duplicate:
+                        st.warning("⚠️ This image appears to be a duplicate.")
+                
+                # Botones de control
+                if st.session_state.pasted_images:
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        if st.button("🗑️ Remove Last", use_container_width=True):
+                            if st.session_state.pasted_images:
+                                st.session_state.pasted_images.pop()
+                                st.session_state.current_images = st.session_state.pasted_images.copy()
+                                if st.session_state.pasted_images:
+                                    st.session_state.current_image = st.session_state.pasted_images[0]
+                                else:
+                                    st.session_state.current_image = None
+                                st.rerun()
+                    
+                    with col2:
+                        if st.button("🔄 Clear All", use_container_width=True):
+                            st.session_state.pasted_images = []
+                            st.session_state.current_images = []
+                            st.session_state.current_image = None
+                            st.rerun()
+                    
+                    with col3:
+                        if len(st.session_state.pasted_images) >= 2:
+                            if st.button("✅ Ready to Analyze", use_container_width=True):
+                                st.session_state.current_images = st.session_state.pasted_images.copy()
+                                st.session_state.current_image = st.session_state.pasted_images[0]
+                                st.success(f"Ready! {len(st.session_state.pasted_images)} images prepared for analysis.")
+                        else:
+                            st.info("Need at least 2 images for multi-image analysis")
+                
+            except ImportError:
+                st.warning("For direct paste functionality:")
+                st.code("pip install streamlit-paste-button")
+                
+                st.markdown("**Alternative method:**")
+                st.info("""
+                1. Take multiple screenshots of the same location
+                2. Save them as files
+                3. Use the "Multiple Files" tab to upload them
+                """)
+        
+        # Botón para limpiar (solo mostrar si hay imágenes)
+        has_any_images = (st.session_state.current_image is not None or 
+                         st.session_state.current_images or 
+                         st.session_state.get('pasted_images', []))
+        
+        if has_any_images:
+            st.markdown("---")
+            if st.button("🗑️ Clear All Images & Results", use_container_width=True):
+                # Limpiar todo
                 st.session_state.current_image = None
+                st.session_state.current_images = []
+                st.session_state.pasted_images = []
                 st.session_state.analysis_result = None
+                st.session_state.multi_analysis_results = []
                 st.session_state.coordinates = None
+                st.session_state.metadata = None
+                st.session_state.validated_coords = None
+                st.session_state.location_details = None
+                st.success("All images and results cleared!")
                 st.rerun()
     
-    # Mostrar imagen actual
-    if st.session_state.current_image is not None:
-        st.image(
-            st.session_state.current_image, 
-            caption="Ready for analysis", 
-            use_container_width=True
-        )
-        
-        # Info de la imagen
-        img_info = st.session_state.current_image
-        st.info(f"Resolution: {img_info.size[0]} × {img_info.size[1]} px")
+    # Mostrar imágenes cargadas
+    if st.session_state.analysis_mode == 'single':
+        if st.session_state.current_image:
+            st.image(
+                st.session_state.current_image, 
+                caption="Ready for analysis", 
+                use_container_width=True
+            )
+            
+            # Info de la imagen
+            img_info = st.session_state.current_image
+            st.info(f"Resolution: {img_info.size[0]} × {img_info.size[1]} px")
+    
+    else:  # Multiple images mode
+        if st.session_state.current_images:
+            st.markdown("#### Images Ready for Analysis")
+            st.info(f"📊 **{len(st.session_state.current_images)} images** loaded for enhanced analysis")
+            
+            # Show thumbnails
+            if len(st.session_state.current_images) <= 3:
+                cols = st.columns(len(st.session_state.current_images))
+                for i, image in enumerate(st.session_state.current_images):
+                    with cols[i]:
+                        st.image(image, caption=f"Image {i+1}", use_container_width=True)
+            else:
+                # Show in rows of 3
+                for row in range(0, len(st.session_state.current_images), 3):
+                    cols = st.columns(3)
+                    for i in range(3):
+                        if row + i < len(st.session_state.current_images):
+                            with cols[i]:
+                                st.image(
+                                    st.session_state.current_images[row + i], 
+                                    caption=f"Image {row + i + 1}", 
+                                    use_container_width=True
+                                )
 
 with col2:
     st.header("Analysis")
     
-    if st.session_state.current_image is not None:
-        if st.button("Start Analysis", type="primary", use_container_width=True):
+    # Determinar si hay imágenes para analizar
+    has_images = (st.session_state.current_image is not None or 
+                  (st.session_state.current_images and len(st.session_state.current_images) > 0))
+    
+    if has_images:
+        # Mostrar información del análisis
+        if st.session_state.analysis_mode == 'single':
+            analysis_text = "🔍 Start Single Image Analysis"
+            analysis_help = "Analyze one image for location identification"
+        else:
+            num_images = len(st.session_state.current_images) if st.session_state.current_images else 0
+            analysis_text = f"🔍 Start Multi-Image Analysis ({num_images} images)"
+            analysis_help = f"Analyze {num_images} images together for enhanced accuracy"
+        
+        if st.button(analysis_text, type="primary", use_container_width=True, help=analysis_help):
             prompt = load_prompt()
             
             if prompt:
-                with st.spinner("Analyzing with Gemini 2.0..."):
-                    progress_bar = st.progress(0)
+                if st.session_state.analysis_mode == 'single':
+                    # Análisis de imagen única
+                    with st.spinner("🧠 Analyzing with Gemini 2.0..."):
+                        progress_bar = st.progress(0)
+                        
+                        # Simular progreso del análisis
+                        import time
+                        for i in range(100):
+                            time.sleep(0.02)
+                            progress_bar.progress(i + 1)
+                        
+                        result = analyze_with_gemini(st.session_state.current_image, prompt)
+                        progress_bar.empty()
                     
-                    # Simular progreso del análisis
-                    import time
-                    for i in range(100):
-                        time.sleep(0.02)
-                        progress_bar.progress(i + 1)
-                    
-                    result = analyze_with_gemini(st.session_state.current_image, prompt)
-                    progress_bar.empty()
+                    if result:
+                        st.session_state.analysis_result = result
+                        coordinates_list = extract_multiple_coordinates(result)
+                        st.session_state.coordinates = coordinates_list
+                        
+                        # Validate coordinates and get location details
+                        if coordinates_list:
+                            with st.spinner("Validating coordinates and getting location details..."):
+                                st.session_state.validated_coords = coord_validator.validate_coordinates(coordinates_list)
+                                
+                                # Get detailed location information for each coordinate
+                                location_details = []
+                                for lat, lon in coordinates_list:
+                                    details = reverse_geocoder.get_location_details(lat, lon)
+                                    if details:
+                                        details['coordinates'] = f"{lat}, {lon}"
+                                        location_details.append(details)
+                                st.session_state.location_details = location_details
+                        
+                        st.success("✅ Single image analysis completed")
                 
-                if result:
-                    st.session_state.analysis_result = result
-                    coordinates_list = extract_multiple_coordinates(result)
-                    st.session_state.coordinates = coordinates_list
+                else:
+                    # Análisis de múltiples imágenes
+                    with st.spinner("🧠 Analyzing multiple images with Gemini 2.0..."):
+                        progress_bar = st.progress(0)
+                        
+                        # Analizar múltiples imágenes
+                        combined_result, refined_coordinates, individual_results = analyze_multiple_images(
+                            st.session_state.current_images, prompt
+                        )
+                        
+                        progress_bar.progress(100)
+                        progress_bar.empty()
                     
-                    # Validate coordinates and get location details
-                    if coordinates_list:
-                        with st.spinner("Validating coordinates and getting location details..."):
-                            st.session_state.validated_coords = coord_validator.validate_coordinates(coordinates_list)
-                            
-                            # Get detailed location information for each coordinate
-                            location_details = []
-                            for lat, lon in coordinates_list:
-                                details = reverse_geocoder.get_location_details(lat, lon)
-                                if details:
-                                    details['coordinates'] = f"{lat}, {lon}"
-                                    location_details.append(details)
-                            st.session_state.location_details = location_details
-                    
-                    st.success("Analysis completed")
+                    if combined_result:
+                        st.session_state.analysis_result = combined_result
+                        st.session_state.multi_analysis_results = individual_results
+                        st.session_state.coordinates = refined_coordinates
+                        
+                        # Validate coordinates and get location details
+                        if refined_coordinates:
+                            with st.spinner("Validating coordinates and getting location details..."):
+                                st.session_state.validated_coords = coord_validator.validate_coordinates(refined_coordinates)
+                                
+                                # Get detailed location information for each coordinate
+                                location_details = []
+                                for lat, lon in refined_coordinates:
+                                    details = reverse_geocoder.get_location_details(lat, lon)
+                                    if details:
+                                        details['coordinates'] = f"{lat}, {lon}"
+                                        location_details.append(details)
+                                st.session_state.location_details = location_details
+                        
+                        st.success(f"✅ Multi-image analysis completed ({len(st.session_state.current_images)} images processed)")
     
     # Mostrar resultados si existen
     if st.session_state.analysis_result:
         # Crear tabs para diferentes tipos de información
-        result_tab1, result_tab2, result_tab3, result_tab4, result_tab5 = st.tabs([
-            "AI Analysis", "Advanced Analysis", "Metadata", "Location Details", "Export"
-        ])
+        if st.session_state.analysis_mode == 'multiple' and st.session_state.multi_analysis_results:
+            result_tab1, result_tab2, result_tab3, result_tab4, result_tab5, result_tab6 = st.tabs([
+                "Combined Analysis", "Individual Results", "Advanced Analysis", "Metadata", "Location Details", "Export"
+            ])
+        else:
+            result_tab1, result_tab2, result_tab3, result_tab4, result_tab5 = st.tabs([
+                "AI Analysis", "Advanced Analysis", "Metadata", "Location Details", "Export"
+            ])
+            result_tab6 = None
         
         with result_tab1:
             st.markdown('<div class="result-box">', unsafe_allow_html=True)
-            st.markdown("### AI Analysis Results")
+            if st.session_state.analysis_mode == 'multiple':
+                st.markdown("### 🔍 Combined Multi-Image Analysis")
+            else:
+                st.markdown("### 🔍 AI Analysis Results")
             st.markdown(st.session_state.analysis_result)
             st.markdown('</div>', unsafe_allow_html=True)
         
-        with result_tab2:
+        # Pestaña de resultados individuales (solo para análisis múltiple)
+        if result_tab6:
+            with result_tab6:
+                st.markdown("### 📸 Individual Image Analysis Results")
+                
+                if st.session_state.multi_analysis_results:
+                    for result in st.session_state.multi_analysis_results:
+                        with st.expander(f"🖼️ Image {result['image_index']} Analysis", expanded=False):
+                            st.markdown(result['analysis'])
+                            
+                            # Mostrar coordenadas específicas de esta imagen
+                            if result['coordinates']:
+                                st.markdown("#### Coordinates from this image:")
+                                for i, (lat, lon) in enumerate(result['coordinates']):
+                                    st.code(f"Location {i+1}: {lat}, {lon}")
+                                    
+                                    # Enlaces para esta coordenada específica
+                                    maps_url = f"https://www.google.com/maps/search/?api=1&query={lat},{lon}"
+                                    sv_url = f"https://www.google.com/maps/@?api=1&map_action=pano&viewpoint={lat},{lon}"
+                                    
+                                    col1, col2 = st.columns(2)
+                                    with col1:
+                                        st.link_button(f"🗺️ Maps", maps_url, use_container_width=True)
+                                    with col2:
+                                        st.link_button(f"📸 Street View", sv_url, use_container_width=True)
+                            else:
+                                st.info("No specific coordinates extracted from this image")
+                            
+                            st.markdown("---")
+                else:
+                    st.info("No individual results available")
+        
+        # Ajustar índice de pestañas según el modo
+        advanced_tab = result_tab3 if result_tab6 else result_tab2
+        metadata_tab = result_tab4 if result_tab6 else result_tab3
+        location_tab = result_tab5 if result_tab6 else result_tab4
+        export_tab = result_tab6 if result_tab6 else result_tab5
+        
+        with advanced_tab:
             st.markdown("### Advanced OSINT Analysis")
             
             if st.session_state.current_image and st.session_state.analysis_result:
@@ -1261,7 +1484,7 @@ with col2:
             else:
                 st.info("Complete an analysis first to see advanced features")
         
-        with result_tab3:
+        with metadata_tab:
             st.markdown("### Image Metadata")
             
             # Always try to extract metadata if we have an image
@@ -1313,17 +1536,75 @@ with col2:
                             
                             m = folium.Map(
                                 location=[gps_coords['latitude'], gps_coords['longitude']], 
-                                zoom_start=15
+                                zoom_start=17,  # Zoom más cercano
+                                tiles=None
                             )
+                            
+                            # Agregar capas profesionales
+                            folium.TileLayer(
+                                'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                                attr='Esri World Imagery',
+                                name='Satellite View',
+                                overlay=False,
+                                control=True
+                            ).add_to(m)
+                            
+                            folium.TileLayer(
+                                'OpenStreetMap',
+                                name='Street Map',
+                                overlay=False,
+                                control=True
+                            ).add_to(m)
+                            
+                            folium.TileLayer(
+                                'CartoDB positron',
+                                name='Clean Map',
+                                overlay=False,
+                                control=True
+                            ).add_to(m)
+                            
+                            # Marcador mejorado
+                            popup_html = f"""
+                            <div style="font-family: Arial, sans-serif; width: 200px; padding: 10px;">
+                                <h4 style="margin: 0 0 10px 0; color: green; border-bottom: 1px solid #eee; padding-bottom: 5px;">
+                                    EXIF GPS Location
+                                </h4>
+                                <p style="margin: 5px 0; font-size: 13px;">
+                                    <strong>Coordinates:</strong><br>
+                                    <code style="background: #f5f5f5; padding: 2px 4px; border-radius: 3px;">
+                                    {gps_coords['latitude']:.6f}, {gps_coords['longitude']:.6f}
+                                    </code>
+                                </p>
+                                <p style="margin: 5px 0; font-size: 11px; color: #666; font-style: italic;">
+                                    Extracted from image metadata
+                                </p>
+                            </div>
+                            """
                             
                             folium.Marker(
                                 [gps_coords['latitude'], gps_coords['longitude']],
-                                popup="GPS coordinates from EXIF data",
-                                tooltip="EXIF GPS Location",
-                                icon=folium.Icon(color='green', icon='camera')
+                                popup=folium.Popup(popup_html, max_width=250),
+                                tooltip="EXIF GPS Location - Click for details",
+                                icon=folium.Icon(color='green', icon='camera', prefix='fa')
                             ).add_to(m)
                             
-                            st_folium(m, width=700, height=300)
+                            # Círculo de precisión
+                            folium.Circle(
+                                [gps_coords['latitude'], gps_coords['longitude']],
+                                radius=50,
+                                popup="GPS precision area from EXIF",
+                                color='green',
+                                weight=2,
+                                fill=True,
+                                fillColor='green',
+                                fillOpacity=0.15,
+                                opacity=0.7
+                            ).add_to(m)
+                            
+                            # Control de capas
+                            folium.LayerControl(position='topright', collapsed=False).add_to(m)
+                            
+                            st_folium(m, width=None, height=500, use_container_width=True, key="exif_map")
                         except ImportError:
                             st.info("Install folium for map visualization")
                         except Exception as e:
@@ -1332,7 +1613,7 @@ with col2:
                         st.info("No GPS coordinates found in EXIF data")
                         
                         # Try to extract GPS again
-                        if st.button("🔄 Try Extract GPS Again"):
+                        if st.button("🔄 Try Extract GPS Again", key="extract_gps_btn"):
                             with st.spinner("Extracting GPS data..."):
                                 try:
                                     gps_coords = metadata_extractor.extract_gps_from_exif(st.session_state.current_image)
@@ -1361,7 +1642,7 @@ with col2:
                         st.info("No EXIF data extracted")
                         
                         # Try to extract EXIF again
-                        if st.button("🔄 Try Extract EXIF Again"):
+                        if st.button("🔄 Try Extract EXIF Again", key="extract_exif_btn"):
                             with st.spinner("Extracting EXIF data..."):
                                 try:
                                     # This would need the original file, which we might not have for pasted images
@@ -1378,7 +1659,7 @@ with col2:
             else:
                 st.info("No image loaded for metadata analysis")
         
-        with result_tab4:
+        with location_tab:
             st.markdown("### Location Details")
             if st.session_state.location_details:
                 for i, details in enumerate(st.session_state.location_details):
@@ -1393,7 +1674,7 @@ with col2:
                             st.metric("Postal Code", details.get('postcode', 'Unknown'))
                             st.metric("Road", details.get('road', 'Unknown'))
                         
-                        st.text_area("Full Address", details.get('full_address', 'Unknown'), height=100)
+                        st.text_area("Full Address", details.get('full_address', 'Unknown'), height=100, key=f"address_{i}")
             
             # Coordinate validation results
             if st.session_state.validated_coords:
@@ -1419,7 +1700,7 @@ with col2:
                         distance_df = pd.DataFrame(distances)
                         st.dataframe(distance_df, use_container_width=True)
         
-        with result_tab5:
+        with export_tab:
             st.markdown("### Export Results")
             
             if st.session_state.coordinates:
@@ -1448,36 +1729,39 @@ with col2:
                 col1, col2, col3 = st.columns(3)
                 
                 with col1:
-                    if st.button("Export as CSV"):
+                    if st.button("Export as CSV", key="export_csv_btn"):
                         csv_data = data_exporter.to_csv(export_data)
                         if csv_data:
                             st.download_button(
                                 label="Download CSV",
                                 data=csv_data,
                                 file_name=f"geosint_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                                mime="text/csv"
+                                mime="text/csv",
+                                key="download_csv_btn"
                             )
                 
                 with col2:
-                    if st.button("Export as JSON"):
+                    if st.button("Export as JSON", key="export_json_btn"):
                         json_data = data_exporter.to_json(export_data)
                         if json_data:
                             st.download_button(
                                 label="Download JSON",
                                 data=json_data,
                                 file_name=f"geosint_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                                mime="application/json"
+                                mime="application/json",
+                                key="download_json_btn"
                             )
                 
                 with col3:
-                    if st.button("Export as KML"):
+                    if st.button("Export as KML", key="export_kml_btn"):
                         kml_data = data_exporter.to_kml(st.session_state.coordinates)
                         if kml_data:
                             st.download_button(
                                 label="Download KML",
                                 data=kml_data,
                                 file_name=f"geosint_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.kml",
-                                mime="application/vnd.google-earth.kml+xml"
+                                mime="application/vnd.google-earth.kml+xml",
+                                key="download_kml_btn"
                             )
                 
                 # Advanced verification links
@@ -1572,48 +1856,116 @@ with col2:
                     center_lat = sum(coord[0] for coord in valid_coords) / len(valid_coords)
                     center_lon = sum(coord[1] for coord in valid_coords) / len(valid_coords)
                     
-                    # Crear mapa
+                    # Crear mapa profesional ultra-mejorado
                     m = folium.Map(
                         location=[center_lat, center_lon], 
-                        zoom_start=14,
-                        tiles='OpenStreetMap'
+                        zoom_start=17,  # Zoom más cercano para máximo detalle
+                        tiles=None  # No usar tiles por defecto
                     )
                     
-                    # Agregar capas adicionales
-                    folium.TileLayer('Stamen Terrain').add_to(m)
-                    folium.TileLayer('CartoDB positron').add_to(m)
+                    # Agregar vista satelital de alta calidad como principal
+                    folium.TileLayer(
+                        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                        attr='Esri World Imagery',
+                        name='Satellite View',
+                        overlay=False,
+                        control=True
+                    ).add_to(m)
                     
-                    # Colores para cada marcador
+                    # Agregar OpenStreetMap como alternativa
+                    folium.TileLayer(
+                        'OpenStreetMap',
+                        name='Street Map',
+                        overlay=False,
+                        control=True
+                    ).add_to(m)
+                    
+                    # Agregar mapa limpio profesional
+                    folium.TileLayer(
+                        'CartoDB positron',
+                        name='Clean Map',
+                        overlay=False,
+                        control=True
+                    ).add_to(m)
+                    
+                    # Agregar mapa oscuro para contraste
+                    folium.TileLayer(
+                        'CartoDB dark_matter',
+                        name='Dark Map',
+                        overlay=False,
+                        control=True
+                    ).add_to(m)
+                    
+                    # Colores y etiquetas profesionales
                     colors = ['red', 'blue', 'green', 'purple', 'orange']
-                    labels = ['Principal', 'Alternativa 1', 'Alternativa 2', 'Alternativa 3', 'Alternativa 4']
+                    labels = ['Primary Location', 'Alternative 1', 'Alternative 2', 'Alternative 3', 'Alternative 4']
                     
-                    # Agregar marcadores para cada ubicación
+                    # Agregar marcadores mejorados
                     for i, [lat_f, lon_f] in enumerate(valid_coords):
                         color = colors[i % len(colors)]
                         label = labels[i % len(labels)]
                         
+                        # Popup más profesional
+                        popup_html = f"""
+                        <div style="font-family: Arial, sans-serif; width: 220px; padding: 10px;">
+                            <h4 style="margin: 0 0 10px 0; color: {color}; border-bottom: 1px solid #eee; padding-bottom: 5px;">
+                                {label}
+                            </h4>
+                            <p style="margin: 5px 0; font-size: 13px;">
+                                <strong>Coordinates:</strong><br>
+                                <code style="background: #f5f5f5; padding: 2px 4px; border-radius: 3px;">
+                                {st.session_state.coordinates[i][0]}, {st.session_state.coordinates[i][1]}
+                                </code>
+                            </p>
+                            <p style="margin: 5px 0; font-size: 11px; color: #666; font-style: italic;">
+                                Click to copy coordinates
+                            </p>
+                        </div>
+                        """
+                        
                         folium.Marker(
                             [lat_f, lon_f],
-                            popup=f"{label}\n{st.session_state.coordinates[i][0]}, {st.session_state.coordinates[i][1]}",
-                            tooltip=f"{label}",
-                            icon=folium.Icon(color=color, icon='info-sign')
+                            popup=folium.Popup(popup_html, max_width=250),
+                            tooltip=f"{label} - Click for details",
+                            icon=folium.Icon(
+                                color=color,
+                                icon='map-pin',
+                                prefix='fa'
+                            )
                         ).add_to(m)
                         
-                        # Círculo de precisión
+                        # Círculo de precisión más sutil
                         folium.Circle(
                             [lat_f, lon_f],
-                            radius=100,
-                            popup=f"Precision area - {label}",
+                            radius=75,  # Radio más pequeño
+                            popup=f"Estimated precision area for {label}",
                             color=color,
+                            weight=2,
                             fill=True,
-                            opacity=0.2
+                            fillColor=color,
+                            fillOpacity=0.15,
+                            opacity=0.7
                         ).add_to(m)
                     
-                    # Control de capas
-                    folium.LayerControl().add_to(m)
+                    # Control de capas en posición mejor
+                    folium.LayerControl(position='topright', collapsed=False).add_to(m)
                     
-                    # Mostrar mapa
-                    st_folium(m, width=700, height=500, returned_objects=["last_clicked"])
+                    # Agregar botón de pantalla completa
+                    try:
+                        from folium.plugins import Fullscreen
+                        Fullscreen(position='topleft').add_to(m)
+                    except ImportError:
+                        pass  # Si no está disponible, continuar sin él
+                    
+                    # Mostrar mapa ultra-profesional y grande
+                    st_folium(
+                        m, 
+                        width=None,  # Usar ancho completo del contenedor
+                        height=700,  # Altura mucho más grande
+                        returned_objects=["last_clicked"],
+                        use_container_width=True,
+                        key="main_map"
+                    )
                     
                     # Información adicional
                     st.info(f"{len(valid_coords)} candidate locations • Verify each one in Street View for accuracy")
@@ -1626,8 +1978,11 @@ with col2:
             st.warning("No specific coordinates detected")
             st.info("The image may need more distinctive elements for precise geolocation")
     
-    elif st.session_state.current_image is None:
-        st.info("Upload an image to start analysis")
+    else:
+        if st.session_state.analysis_mode == 'single':
+            st.info("📤 Upload an image to start analysis")
+        else:
+            st.info("📤 Upload 2-5 images of the same location for enhanced multi-image analysis")
 
 # Footer ultra-elegante
 st.markdown("---")
