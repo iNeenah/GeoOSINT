@@ -70,6 +70,8 @@ if 'analysis_mode' not in st.session_state:
     st.session_state.analysis_mode = 'single'  # 'single' or 'multiple'
 if 'lens_results' not in st.session_state:
     st.session_state.lens_results = None
+if 'visual_search_results' not in st.session_state:
+    st.session_state.visual_search_results = None
 
 # Inicializar utilidades
 try:
@@ -101,6 +103,15 @@ try:
     # Google Lens Simulator (automatic analysis)
     lens_simulator = GoogleLensSimulator()
     web_search = WebSearchIntegration()
+    
+    # Visual Search System (Google Lens-like)
+    from visual_search_core import VisualSearchManager
+    from google_images_search import GoogleImagesSearch
+    from visual_search_ui import VisualSearchUI
+    
+    visual_search_manager = VisualSearchManager()
+    visual_search_manager.add_search_engine(GoogleImagesSearch())
+    visual_search_ui = VisualSearchUI()
 except Exception as e:
     st.error(f"Error initializing utilities: {e}")
     st.stop()
@@ -1276,68 +1287,61 @@ with col2:
         col_lens1, col_lens2 = st.columns(2)
         
         with col_lens1:
-            st.markdown("#### Google Lens Analysis")
-            if st.button("Analyze with Google Lens", use_container_width=True, help="Automatic analysis like Google Lens - extracts text, objects, and location clues"):
+            st.markdown("#### Google Lens Visual Search")
+            if st.button("Search with Google Lens", use_container_width=True, help="Find similar images and sources like Google Lens"):
                 if st.session_state.current_image:
-                    with st.spinner("Analyzing image like Google Lens..."):
-                        # Perform automatic Google Lens-like analysis
-                        lens_results = lens_simulator.analyze_image_like_lens(st.session_state.current_image)
-                        st.session_state.lens_results = lens_results
-                        
-                        if lens_results['status'] == 'completed':
-                            st.success("Google Lens analysis completed!")
+                    # Convert PIL image to bytes
+                    import io
+                    img_byte_arr = io.BytesIO()
+                    st.session_state.current_image.save(img_byte_arr, format='JPEG')
+                    image_bytes = img_byte_arr.getvalue()
+                    
+                    # Progress callback function
+                    progress_placeholder = st.empty()
+                    def progress_callback(status):
+                        progress_placeholder.info(status)
+                    
+                    # Perform visual search
+                    with st.spinner("Searching for similar images..."):
+                        try:
+                            import asyncio
                             
-                            # Format and display results
-                            formatted_results = format_lens_results(lens_results)
+                            # Run async search
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
                             
-                            # Show summary
-                            st.info(f"Analysis Summary: {formatted_results['summary']}")
+                            search_results = loop.run_until_complete(
+                                visual_search_manager.search_image(image_bytes, progress_callback)
+                            )
                             
-                            # Show text recognition results
-                            if formatted_results['text_found'] and formatted_results['text_found'] != 'No text detected':
-                                st.markdown("**Text Found in Image:**")
-                                st.text_area("Extracted Text", formatted_results['text_found'], height=100, key="lens_text")
+                            loop.close()
+                            
+                            # Store results
+                            st.session_state.visual_search_results = search_results
+                            
+                            # Clear progress
+                            progress_placeholder.empty()
+                            
+                            # Show quick summary
+                            if search_results.total_results > 0:
+                                st.success(f"Found {search_results.total_results} similar images!")
                                 
-                                # Add copy button functionality
-                                if st.button("Copy Text to Clipboard", key="copy_lens_text"):
-                                    st.write("Text copied! (Use Ctrl+C to copy from the text area above)")
-                            
-                            # Show objects detected
-                            if lens_results.get('object_detection', {}).get('objects'):
-                                objects = lens_results['object_detection']['objects']
-                                st.markdown("**Objects Detected:**")
-                                for obj in objects[:8]:  # Show top 8 objects
-                                    st.markdown(f"• {obj}")
-                            
-                            # Show landmarks detected
-                            if lens_results.get('object_detection', {}).get('landmarks'):
-                                landmarks = lens_results['object_detection']['landmarks']
-                                st.markdown("**Landmarks Detected:**")
-                                for landmark in landmarks:
-                                    st.markdown(f"• {landmark}")
-                            
-                            # Show location clues
-                            if formatted_results['location_clues']:
-                                st.markdown("**Location Clues Found:**")
-                                for i, clue in enumerate(formatted_results['location_clues']):
-                                    clue_type = clue.get('type', 'Unknown').replace('_', ' ').title()
-                                    clue_value = clue.get('value', 'N/A')
-                                    clue_source = clue.get('source', 'unknown')
-                                    
-                                    # Color code by type
-                                    if 'address' in clue.get('type', '').lower():
-                                        st.markdown(f"🏠 **{clue_type}**: {clue_value} _(from {clue_source})_")
-                                    elif 'street' in clue.get('type', '').lower():
-                                        st.markdown(f"🛣️ **{clue_type}**: {clue_value} _(from {clue_source})_")
-                                    elif 'landmark' in clue.get('type', '').lower():
-                                        st.markdown(f"🏛️ **{clue_type}**: {clue_value} _(from {clue_source})_")
-                                    else:
-                                        st.markdown(f"📍 **{clue_type}**: {clue_value} _(from {clue_source})_")
-                        
-                        elif lens_results['status'] == 'error':
-                            st.error(f"Google Lens analysis failed: {lens_results.get('error', 'Unknown error')}")
-                        else:
-                            st.warning("Google Lens analysis is still processing...")
+                                # Quick preview
+                                col1, col2, col3 = st.columns(3)
+                                with col1:
+                                    st.metric("Similar Images", len(search_results.similar_images))
+                                with col2:
+                                    st.metric("Locations Found", len(search_results.geographic_references))
+                                with col3:
+                                    st.metric("Web Sources", len(search_results.web_sources))
+                                
+                                st.info("📋 Check the 'Visual Search' tab below for detailed results")
+                            else:
+                                st.warning("No similar images found")
+                                
+                        except Exception as e:
+                            st.error(f"Visual search failed: {str(e)}")
+                            progress_placeholder.empty()
         
         with col_lens2:
             st.markdown("#### Reverse Image Search")
@@ -1366,14 +1370,14 @@ with col2:
     if st.session_state.analysis_result:
         # Crear tabs para diferentes tipos de información
         if st.session_state.analysis_mode == 'multiple' and st.session_state.multi_analysis_results:
-            result_tab1, result_tab2, result_tab3, result_tab4, result_tab5, result_tab6, result_tab7, result_tab8 = st.tabs([
-                "Combined Analysis", "Individual Results", "Advanced Analysis", "Metadata", "Location Details", "Export", "External Search", "Google Lens"
+            result_tab1, result_tab2, result_tab3, result_tab4, result_tab5, result_tab6, result_tab7, result_tab8, result_tab9 = st.tabs([
+                "Combined Analysis", "Individual Results", "Advanced Analysis", "Metadata", "Location Details", "Export", "External Search", "Google Lens", "Visual Search"
             ])
         else:
-            result_tab1, result_tab2, result_tab3, result_tab4, result_tab5, result_tab6, result_tab7 = st.tabs([
-                "AI Analysis", "Advanced Analysis", "Metadata", "Location Details", "Export", "External Search", "Google Lens"
+            result_tab1, result_tab2, result_tab3, result_tab4, result_tab5, result_tab6, result_tab7, result_tab8 = st.tabs([
+                "AI Analysis", "Advanced Analysis", "Metadata", "Location Details", "Export", "External Search", "Google Lens", "Visual Search"
             ])
-            result_tab8 = None
+            result_tab9 = None
         
         with result_tab1:
             st.markdown('<div class="result-box">', unsafe_allow_html=True)
@@ -1902,8 +1906,35 @@ with col2:
             else:
                 st.info("No coordinates available for export")
         
+        # Visual Search Tab (Google Lens-like Results)
+        visual_search_tab = result_tab8 if result_tab9 is None else result_tab9
+        if visual_search_tab:
+            with visual_search_tab:
+                st.markdown("### Visual Search Results")
+                
+                if st.session_state.visual_search_results:
+                    # Display full visual search results
+                    visual_search_ui.display_search_results(st.session_state.visual_search_results)
+                    
+                    # Add export section
+                    st.markdown("---")
+                    visual_search_ui.create_export_section(st.session_state.visual_search_results)
+                    
+                elif st.session_state.current_image:
+                    st.info("Click 'Search with Google Lens' above to find similar images and sources")
+                    
+                    # Show preview of what will be searched
+                    st.markdown("**Your image will be searched across:**")
+                    st.markdown("- Google Images (similar images and sources)")
+                    st.markdown("- Web pages containing this image")
+                    st.markdown("- Geographic references and locations")
+                    st.markdown("- Related landmarks and places")
+                    
+                else:
+                    st.info("Upload an image to start visual search")
+        
         # Google Lens Tab (Automatic Analysis)
-        lens_tab = result_tab7 if result_tab8 is None else result_tab8
+        lens_tab = result_tab7 if result_tab9 is None else result_tab8
         if lens_tab:
             with lens_tab:
                 st.markdown("### Google Lens Analysis")
