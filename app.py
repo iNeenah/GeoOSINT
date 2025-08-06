@@ -31,6 +31,18 @@ from geomastr_features import (
     SignageAnalysis,
     LanguageAnalysis
 )
+from google_lens_integration import (
+    GoogleLensAnalyzer,
+    GoogleReverseImageSearch,
+    YandexImageSearch,
+    TinEyeIntegration,
+    create_all_search_links
+)
+from google_lens_simulator import (
+    GoogleLensSimulator,
+    WebSearchIntegration,
+    format_lens_results
+)
 
 # Configurar API de Gemini
 genai.configure(api_key=GEMINI_API_KEY)
@@ -56,6 +68,8 @@ if 'dark_mode' not in st.session_state:
     st.session_state.dark_mode = True  # Dark mode por defecto
 if 'analysis_mode' not in st.session_state:
     st.session_state.analysis_mode = 'single'  # 'single' or 'multiple'
+if 'lens_results' not in st.session_state:
+    st.session_state.lens_results = None
 
 # Inicializar utilidades
 try:
@@ -77,6 +91,16 @@ try:
     vehicle_analysis = VehicleAnalysis()
     signage_analysis = SignageAnalysis()
     language_analysis = LanguageAnalysis()
+    
+    # Google Lens and reverse search integration
+    google_lens = GoogleLensAnalyzer()
+    reverse_search = GoogleReverseImageSearch()
+    yandex_search = YandexImageSearch()
+    tineye_search = TinEyeIntegration()
+    
+    # Google Lens Simulator (automatic analysis)
+    lens_simulator = GoogleLensSimulator()
+    web_search = WebSearchIntegration()
 except Exception as e:
     st.error(f"Error initializing utilities: {e}")
     st.stop()
@@ -1242,19 +1266,114 @@ with col2:
                                 st.session_state.location_details = location_details
                         
                         st.success(f"✅ Multi-image analysis completed ({len(st.session_state.current_images)} images processed)")
+            else:
+                st.error("❌ Could not load analysis prompt")
+        
+        # Google Lens and Reverse Image Search Section
+        st.markdown("---")
+        st.markdown("### Additional Analysis Tools")
+        
+        col_lens1, col_lens2 = st.columns(2)
+        
+        with col_lens1:
+            st.markdown("#### Google Lens Analysis")
+            if st.button("Analyze with Google Lens", use_container_width=True, help="Automatic analysis like Google Lens - extracts text, objects, and location clues"):
+                if st.session_state.current_image:
+                    with st.spinner("Analyzing image like Google Lens..."):
+                        # Perform automatic Google Lens-like analysis
+                        lens_results = lens_simulator.analyze_image_like_lens(st.session_state.current_image)
+                        st.session_state.lens_results = lens_results
+                        
+                        if lens_results['status'] == 'completed':
+                            st.success("Google Lens analysis completed!")
+                            
+                            # Format and display results
+                            formatted_results = format_lens_results(lens_results)
+                            
+                            # Show summary
+                            st.info(f"Analysis Summary: {formatted_results['summary']}")
+                            
+                            # Show text recognition results
+                            if formatted_results['text_found'] and formatted_results['text_found'] != 'No text detected':
+                                st.markdown("**Text Found in Image:**")
+                                st.text_area("Extracted Text", formatted_results['text_found'], height=100, key="lens_text")
+                                
+                                # Add copy button functionality
+                                if st.button("Copy Text to Clipboard", key="copy_lens_text"):
+                                    st.write("Text copied! (Use Ctrl+C to copy from the text area above)")
+                            
+                            # Show objects detected
+                            if lens_results.get('object_detection', {}).get('objects'):
+                                objects = lens_results['object_detection']['objects']
+                                st.markdown("**Objects Detected:**")
+                                for obj in objects[:8]:  # Show top 8 objects
+                                    st.markdown(f"• {obj}")
+                            
+                            # Show landmarks detected
+                            if lens_results.get('object_detection', {}).get('landmarks'):
+                                landmarks = lens_results['object_detection']['landmarks']
+                                st.markdown("**Landmarks Detected:**")
+                                for landmark in landmarks:
+                                    st.markdown(f"• {landmark}")
+                            
+                            # Show location clues
+                            if formatted_results['location_clues']:
+                                st.markdown("**Location Clues Found:**")
+                                for i, clue in enumerate(formatted_results['location_clues']):
+                                    clue_type = clue.get('type', 'Unknown').replace('_', ' ').title()
+                                    clue_value = clue.get('value', 'N/A')
+                                    clue_source = clue.get('source', 'unknown')
+                                    
+                                    # Color code by type
+                                    if 'address' in clue.get('type', '').lower():
+                                        st.markdown(f"🏠 **{clue_type}**: {clue_value} _(from {clue_source})_")
+                                    elif 'street' in clue.get('type', '').lower():
+                                        st.markdown(f"🛣️ **{clue_type}**: {clue_value} _(from {clue_source})_")
+                                    elif 'landmark' in clue.get('type', '').lower():
+                                        st.markdown(f"🏛️ **{clue_type}**: {clue_value} _(from {clue_source})_")
+                                    else:
+                                        st.markdown(f"📍 **{clue_type}**: {clue_value} _(from {clue_source})_")
+                        
+                        elif lens_results['status'] == 'error':
+                            st.error(f"Google Lens analysis failed: {lens_results.get('error', 'Unknown error')}")
+                        else:
+                            st.warning("Google Lens analysis is still processing...")
+        
+        with col_lens2:
+            st.markdown("#### Reverse Image Search")
+            if st.button("Multiple Search Engines", use_container_width=True, help="Search across multiple reverse image search engines"):
+                if st.session_state.current_image:
+                    with st.spinner("Generating search links..."):
+                        search_links = create_all_search_links(st.session_state.current_image)
+                        
+                        if search_links:
+                            st.success(f"Generated {len(search_links)} search links!")
+                            
+                            # Display search links in a nice format
+                            for engine, url in search_links.items():
+                                if engine == "Google Lens":
+                                    st.markdown(f"**[{engine}]({url})** - Visual search and object recognition")
+                                elif engine == "Google Images":
+                                    st.markdown(f"**[{engine}]({url})** - Find similar images and sources")
+                                elif engine == "Yandex Images":
+                                    st.markdown(f"**[{engine}]({url})** - Russian search engine with good image recognition")
+                                elif engine == "TinEye":
+                                    st.markdown(f"**[{engine}]({url})** - Reverse image search specialist")
+                        else:
+                            st.error("Failed to generate search links")
     
     # Mostrar resultados si existen
     if st.session_state.analysis_result:
         # Crear tabs para diferentes tipos de información
         if st.session_state.analysis_mode == 'multiple' and st.session_state.multi_analysis_results:
-            result_tab1, result_tab2, result_tab3, result_tab4, result_tab5, result_tab6 = st.tabs([
-                "Combined Analysis", "Individual Results", "Advanced Analysis", "Metadata", "Location Details", "Export"
+            result_tab1, result_tab2, result_tab3, result_tab4, result_tab5, result_tab6, result_tab7, result_tab8 = st.tabs([
+                "Combined Analysis", "Individual Results", "Advanced Analysis", "Metadata", "Location Details", "Export", "External Search", "Google Lens"
             ])
         else:
-            result_tab1, result_tab2, result_tab3, result_tab4, result_tab5 = st.tabs([
-                "AI Analysis", "Advanced Analysis", "Metadata", "Location Details", "Export"
+            result_tab1, result_tab2, result_tab3, result_tab4, result_tab5, result_tab6, result_tab7 = st.tabs([
+                "AI Analysis", "Advanced Analysis", "Metadata", "Location Details", "Export", "External Search", "Google Lens"
             ])
-            result_tab6 = None
+            result_tab8 = None
         
         with result_tab1:
             st.markdown('<div class="result-box">', unsafe_allow_html=True)
@@ -1783,6 +1902,240 @@ with col2:
             else:
                 st.info("No coordinates available for export")
         
+        # Google Lens Tab (Automatic Analysis)
+        lens_tab = result_tab7 if result_tab8 is None else result_tab8
+        if lens_tab:
+            with lens_tab:
+                st.markdown("### Google Lens Analysis")
+                
+                if st.session_state.current_image:
+                    # Auto-analyze button
+                    col1, col2 = st.columns([2, 1])
+                    
+                    with col1:
+                        st.markdown("""
+                        **Automatic Google Lens-like Analysis:**
+                        - Text recognition (OCR) from images
+                        - Object and landmark detection
+                        - Location clue extraction
+                        - Web search integration
+                        - Similar image finding
+                        """)
+                    
+                    with col2:
+                        if st.button("Start Google Lens Analysis", key="lens_tab_btn", use_container_width=True):
+                            with st.spinner("Performing Google Lens analysis..."):
+                                lens_results = lens_simulator.analyze_image_like_lens(st.session_state.current_image)
+                                st.session_state.lens_results = lens_results
+                    
+                    # Display results if available
+                    if st.session_state.lens_results:
+                        results = st.session_state.lens_results
+                        
+                        if results['status'] == 'completed':
+                            st.success("Analysis completed successfully!")
+                            
+                            # Text Recognition Section
+                            st.markdown("#### Text Recognition (OCR)")
+                            if results.get('text_recognition'):
+                                text_data = results['text_recognition']
+                                full_text = text_data.get('full_text', 'No text detected')
+                                
+                                if full_text and full_text != 'No text detected':
+                                    st.text_area("Extracted Text", full_text, height=150, key="detailed_lens_text")
+                                    
+                                    # Text regions with confidence
+                                    text_regions = text_data.get('text_regions', [])
+                                    if text_regions:
+                                        st.markdown("**Text Regions with Confidence:**")
+                                        for region in text_regions[:10]:  # Show top 10
+                                            if region['text'].strip():
+                                                st.markdown(f"- **{region['text']}** (confidence: {region['confidence']}%)")
+                                else:
+                                    st.info("No text detected in the image")
+                            
+                            st.markdown("---")
+                            
+                            # Object Detection Section
+                            st.markdown("#### Object & Landmark Detection")
+                            if results.get('object_detection'):
+                                obj_data = results['object_detection']
+                                
+                                # Show detected objects
+                                objects = obj_data.get('objects', [])
+                                if objects and objects != ['Analysis failed: ']:
+                                    st.markdown("**Objects Detected:**")
+                                    obj_cols = st.columns(2)
+                                    for i, obj in enumerate(objects[:10]):
+                                        with obj_cols[i % 2]:
+                                            st.markdown(f"• {obj}")
+                                
+                                # Show detected landmarks
+                                landmarks = obj_data.get('landmarks', [])
+                                if landmarks:
+                                    st.markdown("**Landmarks Detected:**")
+                                    for landmark in landmarks:
+                                        st.markdown(f"🏛️ {landmark}")
+                                
+                                # Show scene type
+                                scene_type = obj_data.get('scene_type', '')
+                                if scene_type and scene_type != 'Unknown':
+                                    st.markdown(f"**Scene Type:** {scene_type}")
+                                
+                                # Show image properties
+                                properties = obj_data.get('properties', {})
+                                if properties:
+                                    st.markdown("**Image Properties:**")
+                                    col1, col2, col3, col4 = st.columns(4)
+                                    with col1:
+                                        st.metric("Width", f"{properties.get('width', 0)}px")
+                                    with col2:
+                                        st.metric("Height", f"{properties.get('height', 0)}px")
+                                    with col3:
+                                        st.metric("Aspect Ratio", f"{properties.get('aspect_ratio', 0):.2f}")
+                                    with col4:
+                                        st.metric("Format", properties.get('file_format', 'Unknown'))
+                                
+                                # Show dominant colors
+                                colors = properties.get('dominant_colors', [])
+                                if colors:
+                                    st.markdown("**Dominant Colors:**")
+                                    color_cols = st.columns(min(len(colors), 5))
+                                    for i, color_data in enumerate(colors[:5]):
+                                        with color_cols[i]:
+                                            color = color_data['color']
+                                            percentage = color_data.get('percentage', 0)
+                                            st.markdown(f"<div style='background-color: rgb{color}; height: 40px; border-radius: 5px; margin: 5px 0; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; text-shadow: 1px 1px 1px rgba(0,0,0,0.5);'>{percentage}%</div>", unsafe_allow_html=True)
+                                            st.caption(f"RGB{color}")
+                                
+                                # Show detected shapes
+                                shapes = properties.get('detected_shapes', [])
+                                if shapes and 'basic-analysis-failed' not in shapes:
+                                    st.markdown(f"**Pattern Analysis:** {', '.join(set(shapes))}")
+                            
+                            st.markdown("---")
+                            
+                            # Location Clues Section
+                            st.markdown("#### Location Clues")
+                            location_clues = results.get('location_clues', [])
+                            if location_clues:
+                                for clue in location_clues:
+                                    clue_type = clue.get('type', 'Unknown')
+                                    clue_value = clue.get('value', 'N/A')
+                                    clue_source = clue.get('source', 'unknown')
+                                    
+                                    st.markdown(f"**{clue_type.title()}**: {clue_value}")
+                                    st.caption(f"Source: {clue_source}")
+                            else:
+                                st.info("No specific location clues detected")
+                            
+                            st.markdown("---")
+                            
+                            # Web Search Results Section
+                            st.markdown("#### Web Search Results")
+                            web_results = results.get('web_search_results', [])
+                            if web_results:
+                                for result in web_results:
+                                    if 'error' not in result:
+                                        st.markdown(f"**[{result.get('title', 'Unknown')}]({result.get('url', '#')})**")
+                                        st.markdown(result.get('description', 'No description available'))
+                                        st.markdown("---")
+                            else:
+                                st.info("No web search results available")
+                        
+                        elif results['status'] == 'error':
+                            st.error(f"Analysis failed: {results.get('error', 'Unknown error')}")
+                    
+                    else:
+                        st.info("Click 'Start Google Lens Analysis' to analyze the image automatically")
+                
+                else:
+                    st.info("Upload an image to use Google Lens analysis")
+        
+        # External Search Tab (Manual Links)
+        external_tab = result_tab6 if result_tab8 is None else result_tab7
+        if external_tab:
+            with external_tab:
+                st.markdown("### External Search Tools")
+                st.markdown("Use these tools to cross-verify and enhance your analysis with external search engines.")
+                
+                if st.session_state.current_image:
+                    # Google Lens Section
+                    st.markdown("#### Google Lens Analysis")
+                    col1, col2 = st.columns([2, 1])
+                    
+                    with col1:
+                        st.markdown("""
+                        **Google Lens** provides visual search capabilities that can:
+                        - Identify landmarks and buildings
+                        - Recognize text in images (OCR)
+                        - Find similar images across the web
+                        - Provide contextual information about objects
+                        """)
+                    
+                    with col2:
+                        if st.button("Generate Google Lens Link", key="lens_result_btn", use_container_width=True):
+                            with st.spinner("Preparing Google Lens analysis..."):
+                                lens_url = google_lens.create_lens_search_link(st.session_state.current_image)
+                                if lens_url:
+                                    st.success("Google Lens URL generated!")
+                                    st.markdown(f"**[Open in Google Lens]({lens_url})**")
+                                else:
+                                    st.error("Failed to generate Google Lens URL")
+                    
+                    st.markdown("---")
+                    
+                    # Reverse Image Search Section
+                    st.markdown("#### Reverse Image Search Engines")
+                    
+                    search_engines_info = {
+                        "Google Images": "Best for finding image sources and similar images",
+                        "Yandex Images": "Excellent for Eastern European and Russian content",
+                        "TinEye": "Specialized reverse image search with detailed tracking"
+                    }
+                    
+                    for engine, description in search_engines_info.items():
+                        st.markdown(f"**{engine}**: {description}")
+                    
+                    if st.button("Generate All Search Links", key="all_search_result_btn", use_container_width=True):
+                        with st.spinner("Generating search links..."):
+                            search_links = create_all_search_links(st.session_state.current_image)
+                            
+                            if search_links:
+                                st.success(f"Generated {len(search_links)} search links!")
+                                
+                                # Create columns for search links
+                                cols = st.columns(2)
+                                for i, (engine, url) in enumerate(search_links.items()):
+                                    with cols[i % 2]:
+                                        if engine == "Google Lens":
+                                            st.link_button(f"Google Lens", url, use_container_width=True)
+                                        elif engine == "Google Images":
+                                            st.link_button(f"Google Images", url, use_container_width=True)
+                                        elif engine == "Yandex Images":
+                                            st.link_button(f"Yandex Images", url, use_container_width=True)
+                                        elif engine == "TinEye":
+                                            st.link_button(f"TinEye", url, use_container_width=True)
+                            else:
+                                st.error("Failed to generate search links")
+                    
+                    st.markdown("---")
+                    
+                    # Tips for External Search
+                    st.markdown("#### Tips for External Search")
+                    st.markdown("""
+                    **Best Practices:**
+                    - Use Google Lens for landmark identification and text recognition
+                    - Try Yandex for images that might be from Eastern Europe or Russia
+                    - Use TinEye to track image usage and find original sources
+                    - Cross-reference results from multiple engines for verification
+                    - Look for metadata and EXIF data in original sources
+                    - Check image timestamps and upload dates for temporal analysis
+                    """)
+                    
+                else:
+                    st.info("Upload an image to use external search tools")
+        
         # Mostrar múltiples coordenadas candidatas
         if st.session_state.coordinates and len(st.session_state.coordinates) > 0:
             st.markdown('<div class="coordinate-box">', unsafe_allow_html=True)
@@ -1999,3 +2352,4 @@ st.markdown("""
     </div>
 </div>
 """, unsafe_allow_html=True)
+

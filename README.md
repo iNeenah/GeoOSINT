@@ -12,6 +12,8 @@ A professional visual geolocation analysis platform powered by advanced AI techn
 ### Advanced AI Analysis Engine
 - **Google Gemini 2.0 Flash** primary analysis engine
 - **Gemini 1.5 Pro** automatic fallback system
+- **Google Lens integration** for visual search and object recognition
+- **Multiple reverse image search** engines (Google, Yandex, TinEye)
 - **Military-grade precision** coordinate extraction (6+ decimal places)
 - **Forensic-level visual pattern recognition**
 - **Multi-language support** with English output standardization
@@ -19,6 +21,8 @@ A professional visual geolocation analysis platform powered by advanced AI techn
 ### Professional Analysis Capabilities
 - **Single Image Analysis** - Precise location identification from individual images
 - **360° Multi-Image Analysis** - Enhanced accuracy using multiple angles of the same location
+- **Google Lens Integration** - Direct access to Google's visual search capabilities
+- **Multi-Engine Reverse Search** - Cross-platform image searching (Google, Yandex, TinEye)
 - **Cross-reference verification** system for improved reliability
 - **Confidence scoring** for each location candidate
 - **Interactive mapping** with professional satellite imagery
@@ -36,6 +40,7 @@ A professional visual geolocation analysis platform powered by advanced AI techn
 - **Multiple file processing** for 360° analysis
 - **EXIF data extraction** and GPS coordinate detection
 - **Metadata analysis** for additional intelligence
+- **External search integration** with one-click access to multiple search engines
 
 ## Quick Start
 
@@ -128,8 +133,26 @@ The system employs a comprehensive 7-level analysis protocol:
 2. **Element Identification** - Recognition of distinctive regional features
 3. **Geographic Elimination** - Ruling out incompatible regions
 4. **Triangulation** - Cross-referencing multiple visual cues
-5. **Coordinate Generation** - Precise location calculation
-6. **Confidence Assessment** - Evidence-based reliability scoring
+5. **External Verification** - Google Lens and reverse image search integration
+6. **Coordinate Generation** - Precise location calculation
+7. **Confidence Assessment** - Evidence-based reliability scoring
+
+### Google Lens Integration (Automatic)
+
+**Built-in Google Lens Simulator**
+- **Automatic text recognition (OCR)** - Extract text directly from images
+- **Object and landmark detection** - Identify visual elements automatically
+- **Location clue extraction** - Find addresses, street names, and geographic indicators
+- **Dominant color analysis** - Analyze image color patterns
+- **Shape detection** - Identify geometric patterns and structures
+- **Web search integration** - Automatic search based on extracted information
+- **Copy-paste functionality** - Easy text copying like Google Lens
+
+**Multi-Engine Reverse Search**
+- **Google Images** - Comprehensive image source tracking
+- **Yandex Images** - Excellent for Eastern European content
+- **TinEye** - Specialized reverse image search with detailed tracking
+- **Cross-platform verification** for enhanced accuracy
 
 ## Technology Stack
 
@@ -144,6 +167,23 @@ The system employs a comprehensive 7-level analysis protocol:
 | **Styling** | Custom CSS | Professional UI |
 
 ## Professional Usage
+
+### Google Lens Integration
+
+The application includes a built-in Google Lens simulator that automatically:
+
+1. **Upload Image** - Simply upload your image to the platform
+2. **Click "Analyze with Google Lens"** - Automatic analysis begins
+3. **Text Extraction** - All visible text is extracted and made copyable
+4. **Object Detection** - Visual elements and landmarks are identified
+5. **Location Clues** - Street names, addresses, and geographic indicators are found
+6. **Results Display** - All information is presented in an organized format
+
+**Key Features:**
+- **Automatic OCR** - No manual text selection needed
+- **Copy-paste functionality** - Click to copy extracted text
+- **Location intelligence** - Automatic geographic clue detection
+- **Visual analysis** - Color and shape pattern recognition
 
 ### Analysis Modes
 
